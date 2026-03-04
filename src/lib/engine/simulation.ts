@@ -123,11 +123,11 @@ export function createSimulation(
 		compute: { module: device.createShaderModule({ code: scatterShader }), entryPoint: 'main' }
 	});
 
-	// Plates (force injection)
+	// Plates (force injection — positions are read_write so plates can push particles out)
 	const platesBGL = device.createBindGroupLayout({
 		entries: [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
 		]

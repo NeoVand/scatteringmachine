@@ -74,12 +74,12 @@
 					const forces = audioInput.getFrequencyData(sim!.plateCount);
 					sim!.setPlateForces(forces);
 				} else {
-					// Demo: oscillating plate forces
+					// Demo: travelling wave across plates (equal time extended for all)
 					const t = performance.now() * 0.001;
 					const forces = new Float32Array(sim!.plateCount);
 					for (let i = 0; i < forces.length; i++) {
-						const freq = 0.5 + (i / forces.length) * 2.0;
-						forces[i] = Math.max(0, Math.sin(t * freq * 3.0)) * 0.8;
+						const phase = (i / forces.length) * Math.PI * 4;
+						forces[i] = Math.max(0, Math.sin(t * 3.0 + phase)) * 0.8;
 					}
 					sim!.setPlateForces(forces);
 				}

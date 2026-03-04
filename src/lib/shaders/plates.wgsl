@@ -13,7 +13,7 @@ struct Uniforms {
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-@group(0) @binding(1) var<storage, read> positions: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> positions: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read_write> velocities: array<vec2<f32>>;
 @group(0) @binding(3) var<storage, read> plateForces: array<f32>;
 
@@ -22,7 +22,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let i = gid.x;
 	if (i >= u.particleCount) { return; }
 
-	let pos = positions[i];
+	var pos = positions[i];
 	var vel = velocities[i];
 	let r = u.particleRadius;
 
@@ -31,15 +31,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let plateHeight = u.boxSize.y / f32(u.plateCount);
 
 	// Which plate(s) could this particle overlap with?
-	let pyCenter = pos.y;
-	let pyMin = pyCenter - r;
-	let pyMax = pyCenter + r;
+	let pyMin = pos.y - r;
+	let pyMax = pos.y + r;
 	let plateIdxMin = max(0, i32(pyMin / plateHeight));
 	let plateIdxMax = min(i32(u.plateCount) - 1, i32(pyMax / plateHeight));
 
 	// Check overlap with each nearby plate bar
 	for (var pi = plateIdxMin; pi <= plateIdxMax; pi++) {
 		let force = plateForces[pi];
+		if (force < 0.01) { continue; } // Skip inactive plates
 		let extension = force * maxExtension;
 
 		// Plate occupies: x in [0, extension], y in [pi*plateHeight, (pi+1)*plateHeight]
@@ -55,26 +55,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 		let dist2 = dx * dx + dy * dy;
 
 		if (dist2 < r * r && dist2 > 0.0) {
-			// Push particle out of plate
 			let dist = sqrt(dist2);
 			let nx = dx / dist;
 			let ny = dy / dist;
 			let penetration = r - dist;
 
-			// Plate velocity ~ how fast it's extending (proportional to force)
-			let plateVelX = force * 400.0;
+			// Push position out of plate
+			pos += vec2(nx, ny) * penetration;
+
+			// Plate velocity ~ how fast it's extending
+			let plateVelX = force * 300.0;
 
 			// If particle is moving toward the plate, reflect + add plate momentum
 			let vnRel = vel.x * nx + vel.y * ny;
 			if (vnRel < plateVelX * nx) {
-				vel.x += (-vnRel + plateVelX) * nx;
-				vel.y += -vnRel * ny;
+				vel.x += (-vnRel + plateVelX) * nx * 0.5;
+				vel.y += -vnRel * ny * 0.5;
 			}
-		} else if (dist2 == 0.0 && plateRight > 0.0) {
-			// Particle center is inside the plate — push rightward
-			vel.x = max(vel.x, force * 400.0);
+		} else if (dist2 == 0.0 && plateRight > r) {
+			// Particle center is inside plate — bounded push rightward
+			// Don't teleport far (would break spatial hash), push at most 2r per frame
+			pos.x = min(pos.x + r * 2.0, plateRight + r);
+			vel.x = max(vel.x, force * 300.0);
 		}
 	}
 
+	positions[i] = pos;
 	velocities[i] = vel;
 }

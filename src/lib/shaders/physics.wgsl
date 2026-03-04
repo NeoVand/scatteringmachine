@@ -46,6 +46,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let endX = min(myCX + 1u, u.gridW - 1u);
 	let endY = min(myCY + 1u, u.gridH - 1u);
 
+	var totalSep = vec2<f32>(0.0);
+
 	for (var cy = startY; cy <= endY; cy++) {
 		for (var cx = startX; cx <= endX; cx++) {
 			let ci = getCellIndex(cx, cy);
@@ -74,12 +76,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 						vel -= (1.0 + e) * 0.5 * vnRel * normal;
 					}
 
-					// Separate overlap
-					pos += normal * overlap * 0.5;
+					// Accumulate overlap separation
+					totalSep += normal * overlap * 0.5;
 				}
 			}
 		}
 	}
+
+	// Cap total overlap displacement to prevent cascading explosions in dense packing
+	let sepLen = length(totalSep);
+	if (sepLen > r * 2.0) {
+		totalSep *= (r * 2.0) / sepLen;
+	}
+	pos += totalSep;
 
 	// Velocity cap + NaN protection
 	let speed = length(vel);
