@@ -22,15 +22,21 @@ import prefixSumShader from '$lib/shaders/prefix_sum.wgsl?raw';
 import scatterShader from '$lib/shaders/scatter.wgsl?raw';
 import platesShader from '$lib/shaders/plates.wgsl?raw';
 import detectorsShader from '$lib/shaders/detectors.wgsl?raw';
+import densityShader from '$lib/shaders/density.wgsl?raw';
 import clearDetectorsShader from '$lib/shaders/clear_detectors.wgsl?raw';
 
 export interface Simulation {
 	frame(): void;
 	destroy(): void;
 	resize(w: number, h: number): void;
-	rebuild(count: number, radius: number): void;
+	rebuild(count: number, radius: number, plates?: number, detectors?: number): void;
 	setDamping(v: number): void;
 	setGravity(v: number): void;
+	setPlateReach(v: number): void;
+	setDetectorsActive(v: boolean): void;
+	setPlatesVisible(v: boolean): void;
+	setStiffness(v: number): void;
+	setViscosity(v: number): void;
 	setPlaying(v: boolean): void;
 	setPlateForces(forces: Float32Array): void;
 	getDetectorReadings(): Float32Array | null;
@@ -55,13 +61,17 @@ export function createSimulation(
 	let nDetectors = detectorCount;
 	let damping = 0.999;
 	let gravity = 0;
+	let detectorsActive = false;
+	let platesVisible = true;
+	let stiffness = 2000;
+	let viscosity = 10;
 	let playing = true;
 	let readFromA = true;
 	let destroyed = false;
 	let pendingReadback = false;
 	let latestDetectorReadings: Float32Array | null = null;
 
-	const plateDepthFraction = 0.12; // 12% of box height for plates/detectors
+	let plateDepthFraction = 0.25;
 	function getPlateDepth() {
 		return boxHeight * plateDepthFraction;
 	}
@@ -170,7 +180,23 @@ export function createSimulation(
 		compute: { module: clearDetModule, entryPoint: 'convert' }
 	});
 
-	// Physics
+	// Density (SPH density computation)
+	const densityBGL = device.createBindGroupLayout({
+		entries: [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+		]
+	});
+	const densityPipeline = device.createComputePipeline({
+		layout: device.createPipelineLayout({ bindGroupLayouts: [densityBGL] }),
+		compute: { module: device.createShaderModule({ code: densityShader }), entryPoint: 'main' }
+	});
+
+	// Physics (SPH forces + integration)
 	const physicsBGL = device.createBindGroupLayout({
 		entries: [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -180,7 +206,8 @@ export function createSimulation(
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
+			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
 		]
 	});
 	const physicsPipeline = device.createComputePipeline({
@@ -324,6 +351,27 @@ export function createSimulation(
 		]});
 	}
 
+	function makeDensityBGs() {
+		return {
+			A: device.createBindGroup({ layout: densityBGL, entries: [
+				{ binding: 0, resource: { buffer: pBuf.uniforms } },
+				{ binding: 1, resource: { buffer: pBuf.posA } },
+				{ binding: 2, resource: { buffer: gBuf.prefixSums } },
+				{ binding: 3, resource: { buffer: gBuf.cellCounts } },
+				{ binding: 4, resource: { buffer: gBuf.sortedIndices } },
+				{ binding: 5, resource: { buffer: pBuf.density } }
+			]}),
+			B: device.createBindGroup({ layout: densityBGL, entries: [
+				{ binding: 0, resource: { buffer: pBuf.uniforms } },
+				{ binding: 1, resource: { buffer: pBuf.posB } },
+				{ binding: 2, resource: { buffer: gBuf.prefixSums } },
+				{ binding: 3, resource: { buffer: gBuf.cellCounts } },
+				{ binding: 4, resource: { buffer: gBuf.sortedIndices } },
+				{ binding: 5, resource: { buffer: pBuf.density } }
+			]})
+		};
+	}
+
 	function makePhysicsBGs() {
 		return {
 			AtoB: device.createBindGroup({ layout: physicsBGL, entries: [
@@ -334,7 +382,8 @@ export function createSimulation(
 				{ binding: 4, resource: { buffer: pBuf.velB } },
 				{ binding: 5, resource: { buffer: gBuf.prefixSums } },
 				{ binding: 6, resource: { buffer: gBuf.cellCounts } },
-				{ binding: 7, resource: { buffer: gBuf.sortedIndices } }
+				{ binding: 7, resource: { buffer: gBuf.sortedIndices } },
+				{ binding: 8, resource: { buffer: pBuf.density } }
 			]}),
 			BtoA: device.createBindGroup({ layout: physicsBGL, entries: [
 				{ binding: 0, resource: { buffer: pBuf.uniforms } },
@@ -344,7 +393,8 @@ export function createSimulation(
 				{ binding: 4, resource: { buffer: pBuf.velA } },
 				{ binding: 5, resource: { buffer: gBuf.prefixSums } },
 				{ binding: 6, resource: { buffer: gBuf.cellCounts } },
-				{ binding: 7, resource: { buffer: gBuf.sortedIndices } }
+				{ binding: 7, resource: { buffer: gBuf.sortedIndices } },
+				{ binding: 8, resource: { buffer: pBuf.density } }
 			]})
 		};
 	}
@@ -379,6 +429,7 @@ export function createSimulation(
 	let platesBGs = makePlatesBGs();
 	let detectorsBGs = makeDetectorsBGs();
 	let clearDetBG = makeClearDetBG();
+	let densityBGs = makeDensityBGs();
 	let physicsBGs = makePhysicsBGs();
 	let bgBG = makeBgBG();
 	let renderBGs = makeRenderBGs();
@@ -389,116 +440,151 @@ export function createSimulation(
 		if (destroyed) return;
 
 		const plateDepth = getPlateDepth();
-		writeUniforms(device, pBuf.uniforms, {
-			boxSize: [boxWidth, boxHeight],
-			dt: 1 / 60,
-			particleCount: count,
-			particleRadius: radius,
-			damping,
-			gridW: grid.gridW,
-			gridH: grid.gridH,
-			cellSize: grid.cellSize,
-			plateCount: nPlates,
-			detectorCount: nDetectors,
-			plateDepth,
-			gravity
-		});
+		const subSteps = 3;
 
 		const encoder = device.createCommandEncoder();
 
 		if (playing) {
-			writeGridInfo(device, gBuf.gridInfo, grid.gridW, grid.gridH, grid.cellSize, count);
-			writePrefixInfo(device, gBuf.prefixInfo, grid.totalCells);
-
 			const wgP = Math.ceil(count / 256);
 			const wgC = Math.ceil(grid.totalCells / 256);
 			const wgD = Math.max(1, Math.ceil(nDetectors / 256));
 
-			// 1. Clear grid cells + offsets
-			let pass = encoder.beginComputePass();
-			pass.setPipeline(clearPipeline);
-			pass.setBindGroup(0, clearBGs.counts);
-			pass.dispatchWorkgroups(wgC);
-			pass.end();
-
-			pass = encoder.beginComputePass();
-			pass.setPipeline(clearPipeline);
-			pass.setBindGroup(0, clearBGs.offsets);
-			pass.dispatchWorkgroups(wgC);
-			pass.end();
-
-			// 2. Clear detectors
-			pass = encoder.beginComputePass();
-			pass.setPipeline(clearDetPipeline);
-			pass.setBindGroup(0, clearDetBG);
-			pass.dispatchWorkgroups(wgD);
-			pass.end();
-
-			// 3. Count particles per cell
-			pass = encoder.beginComputePass();
-			pass.setPipeline(countPipeline);
-			pass.setBindGroup(0, readFromA ? countBGs.A : countBGs.B);
-			pass.dispatchWorkgroups(wgP);
-			pass.end();
-
-			// 4. Prefix sum
-			pass = encoder.beginComputePass();
-			pass.setPipeline(prefixPipeline);
-			pass.setBindGroup(0, prefixBG);
-			pass.dispatchWorkgroups(1);
-			pass.end();
-
-			// 5. Scatter
-			pass = encoder.beginComputePass();
-			pass.setPipeline(scatterPipeline);
-			pass.setBindGroup(0, readFromA ? scatterBGs.A : scatterBGs.B);
-			pass.dispatchWorkgroups(wgP);
-			pass.end();
-
-			// 6. Plate forces (modify velocity in-place on current read buffer)
-			pass = encoder.beginComputePass();
-			pass.setPipeline(platesPipeline);
-			pass.setBindGroup(0, readFromA ? platesBGs.A : platesBGs.B);
-			pass.dispatchWorkgroups(wgP);
-			pass.end();
-
-			// 7. Physics (read from current, write to other)
-			pass = encoder.beginComputePass();
-			pass.setPipeline(physicsPipeline);
-			pass.setBindGroup(0, readFromA ? physicsBGs.AtoB : physicsBGs.BtoA);
-			pass.dispatchWorkgroups(wgP);
-			pass.end();
-
-			// After physics: readFromA flipped, so the WRITTEN buffer is the opposite
-			// Detectors should read from the WRITTEN buffer
-			// If readFromA was true: physics wrote to B, so read detectors from B
-			// If readFromA was false: physics wrote to A, so read detectors from A
-
-			// 8. Detectors (read from newly written buffer)
-			pass = encoder.beginComputePass();
-			pass.setPipeline(detectorsPipeline);
-			pass.setBindGroup(0, readFromA ? detectorsBGs.B : detectorsBGs.A);
-			pass.dispatchWorkgroups(wgP);
-			pass.end();
-
-			// 9. Convert detector i32 -> f32
-			pass = encoder.beginComputePass();
-			pass.setPipeline(convertDetPipeline);
-			pass.setBindGroup(0, clearDetBG);
-			pass.dispatchWorkgroups(wgD);
-			pass.end();
-
-			// 10. Copy to readback (only when not mapped)
-			if (!pendingReadback) {
-				encoder.copyBufferToBuffer(
-					ioBuf.detectorDisplay, 0,
-					ioBuf.detectorReadback, 0,
-					nDetectors * 4
-				);
+			// Clear detectors once per frame (only when active)
+			if (detectorsActive) {
+				let pass = encoder.beginComputePass();
+				pass.setPipeline(clearDetPipeline);
+				pass.setBindGroup(0, clearDetBG);
+				pass.dispatchWorkgroups(wgD);
+				pass.end();
 			}
 
-			// Flip ping-pong BEFORE render so render reads the newly written buffer
-			readFromA = !readFromA;
+			// Plate forces applied once per frame (on the current read buffer)
+			{
+				let pass = encoder.beginComputePass();
+				pass.setPipeline(platesPipeline);
+				pass.setBindGroup(0, readFromA ? platesBGs.A : platesBGs.B);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+			}
+
+			// Sub-stepped grid build + physics
+			for (let step = 0; step < subSteps; step++) {
+				writeUniforms(device, pBuf.uniforms, {
+					boxSize: [boxWidth, boxHeight],
+					dt: 1 / (60 * subSteps),
+					particleCount: count,
+					particleRadius: radius,
+					damping,
+					gridW: grid.gridW,
+					gridH: grid.gridH,
+					cellSize: grid.cellSize,
+					plateCount: nPlates,
+					detectorCount: nDetectors,
+					plateDepth,
+					gravity,
+					detectorsActive,
+					platesVisible,
+					stiffness,
+					viscosity
+				});
+				writeGridInfo(device, gBuf.gridInfo, grid.gridW, grid.gridH, grid.cellSize, count);
+				writePrefixInfo(device, gBuf.prefixInfo, grid.totalCells);
+
+				// Clear grid
+				let pass = encoder.beginComputePass();
+				pass.setPipeline(clearPipeline);
+				pass.setBindGroup(0, clearBGs.counts);
+				pass.dispatchWorkgroups(wgC);
+				pass.end();
+
+				pass = encoder.beginComputePass();
+				pass.setPipeline(clearPipeline);
+				pass.setBindGroup(0, clearBGs.offsets);
+				pass.dispatchWorkgroups(wgC);
+				pass.end();
+
+				// Count particles per cell
+				pass = encoder.beginComputePass();
+				pass.setPipeline(countPipeline);
+				pass.setBindGroup(0, readFromA ? countBGs.A : countBGs.B);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				// Prefix sum
+				pass = encoder.beginComputePass();
+				pass.setPipeline(prefixPipeline);
+				pass.setBindGroup(0, prefixBG);
+				pass.dispatchWorkgroups(1);
+				pass.end();
+
+				// Scatter
+				pass = encoder.beginComputePass();
+				pass.setPipeline(scatterPipeline);
+				pass.setBindGroup(0, readFromA ? scatterBGs.A : scatterBGs.B);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				// Density (SPH density computation)
+				pass = encoder.beginComputePass();
+				pass.setPipeline(densityPipeline);
+				pass.setBindGroup(0, readFromA ? densityBGs.A : densityBGs.B);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				// Physics (SPH forces + integration)
+				pass = encoder.beginComputePass();
+				pass.setPipeline(physicsPipeline);
+				pass.setBindGroup(0, readFromA ? physicsBGs.AtoB : physicsBGs.BtoA);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				// Flip ping-pong for next sub-step
+				readFromA = !readFromA;
+			}
+
+			// Detectors run once after all sub-steps (only when active)
+			// readFromA has been flipped subSteps times — current read buffer has latest data
+			if (detectorsActive) {
+				let pass = encoder.beginComputePass();
+				pass.setPipeline(detectorsPipeline);
+				pass.setBindGroup(0, readFromA ? detectorsBGs.A : detectorsBGs.B);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				pass = encoder.beginComputePass();
+				pass.setPipeline(convertDetPipeline);
+				pass.setBindGroup(0, clearDetBG);
+				pass.dispatchWorkgroups(wgD);
+				pass.end();
+
+				if (!pendingReadback) {
+					encoder.copyBufferToBuffer(
+						ioBuf.detectorDisplay, 0,
+						ioBuf.detectorReadback, 0,
+						nDetectors * 4
+					);
+				}
+			}
+		} else {
+			// When not playing, still write uniforms for rendering
+			writeUniforms(device, pBuf.uniforms, {
+				boxSize: [boxWidth, boxHeight],
+				dt: 1 / 60,
+				particleCount: count,
+				particleRadius: radius,
+				damping,
+				gridW: grid.gridW,
+				gridH: grid.gridH,
+				cellSize: grid.cellSize,
+				plateCount: nPlates,
+				detectorCount: nDetectors,
+				plateDepth,
+				gravity,
+				detectorsActive,
+				platesVisible,
+				stiffness,
+				viscosity
+			});
 		}
 
 		// Render pass: background + particles (single pass)
@@ -547,6 +633,7 @@ export function createSimulation(
 		platesBGs = makePlatesBGs();
 		detectorsBGs = makeDetectorsBGs();
 		clearDetBG = makeClearDetBG();
+		densityBGs = makeDensityBGs();
 		physicsBGs = makePhysicsBGs();
 		bgBG = makeBgBG();
 		renderBGs = makeRenderBGs();
@@ -561,9 +648,11 @@ export function createSimulation(
 		rebuildAllBGs();
 	}
 
-	function rebuild(newCount: number, newRadius: number) {
+	function rebuild(newCount: number, newRadius: number, newPlates?: number, newDetectors?: number) {
 		count = newCount;
 		radius = newRadius;
+		if (newPlates != null) nPlates = newPlates;
+		if (newDetectors != null) nDetectors = newDetectors;
 		readFromA = true;
 		grid = computeGridConfig(boxWidth, boxHeight, radius);
 		destroyBuffers(pBuf, gBuf, ioBuf);
@@ -585,6 +674,11 @@ export function createSimulation(
 		rebuild,
 		setDamping(v: number) { damping = v; },
 		setGravity(v: number) { gravity = v; },
+		setPlateReach(v: number) { plateDepthFraction = v; },
+		setDetectorsActive(v: boolean) { detectorsActive = v; },
+		setPlatesVisible(v: boolean) { platesVisible = v; },
+		setStiffness(v: number) { stiffness = v; },
+		setViscosity(v: number) { viscosity = v; },
 		setPlaying(v: boolean) { playing = v; },
 		setPlateForces(forces: Float32Array) {
 			device.queue.writeBuffer(ioBuf.plateForces, 0, forces, 0, Math.min(forces.length, nPlates));

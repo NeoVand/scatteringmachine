@@ -5,6 +5,7 @@ export interface ParticleBuffers {
 	posB: GPUBuffer;
 	velA: GPUBuffer;
 	velB: GPUBuffer;
+	density: GPUBuffer;
 	uniforms: GPUBuffer;
 }
 
@@ -44,6 +45,10 @@ export interface UniformData {
 	detectorCount: number;
 	plateDepth: number;
 	gravity: number;
+	detectorsActive: boolean;
+	platesVisible: boolean;
+	stiffness: number;
+	viscosity: number;
 }
 
 export function computeGridConfig(boxWidth: number, boxHeight: number, radius: number): GridConfig {
@@ -83,7 +88,8 @@ export function createParticleBuffers(
 		posB: createEmptyBuffer(device, posData.byteLength, storageUsage),
 		velA: createBuffer(device, velData.buffer, storageUsage),
 		velB: createEmptyBuffer(device, velData.byteLength, storageUsage),
-		uniforms: createEmptyBuffer(device, 64, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
+		density: createEmptyBuffer(device, count * 4, storageUsage),
+		uniforms: createEmptyBuffer(device, 80, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
 	};
 }
 
@@ -128,7 +134,7 @@ export function createIOBuffers(
 }
 
 export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: UniformData) {
-	const arr = new Float32Array(13);
+	const arr = new Float32Array(20);
 	const u32 = new Uint32Array(arr.buffer);
 	arr[0] = data.boxSize[0];
 	arr[1] = data.boxSize[1];
@@ -143,6 +149,10 @@ export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: Unifor
 	u32[10] = data.detectorCount;
 	arr[11] = data.plateDepth;
 	arr[12] = data.gravity;
+	u32[13] = data.detectorsActive ? 1 : 0;
+	u32[14] = data.platesVisible ? 1 : 0;
+	arr[15] = data.stiffness;
+	arr[16] = data.viscosity;
 	device.queue.writeBuffer(buffer, 0, arr);
 }
 

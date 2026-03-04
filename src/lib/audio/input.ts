@@ -6,8 +6,18 @@ export class AudioInput {
 	private freqData: Float32Array = new Float32Array(0);
 	private binCount = 64;
 
+	/** True when audio context is running (not suspended/closed) */
 	get isActive(): boolean {
 		return this.ctx !== null && this.ctx.state === 'running';
+	}
+
+	/** True when an audio source has been set up (even if paused) */
+	get hasSource(): boolean {
+		return this.analyser !== null;
+	}
+
+	get sampleRate(): number {
+		return this.ctx?.sampleRate ?? 44100;
 	}
 
 	private ensureContext(): AudioContext {
@@ -73,23 +83,48 @@ export class AudioInput {
 		this.analyser!.connect(ctx.destination);
 	}
 
-	/** Returns normalized FFT magnitude bins in [0, 1] range, resampled to match plate count */
-	getFrequencyData(plateCount: number): Float32Array {
+	/** Pause audio playback (suspend the AudioContext) */
+	pause() {
+		if (this.ctx && this.ctx.state === 'running') {
+			this.ctx.suspend();
+		}
+	}
+
+	/** Resume audio playback */
+	resume() {
+		if (this.ctx && this.ctx.state === 'suspended') {
+			this.ctx.resume();
+		}
+	}
+
+	/** Returns normalized FFT magnitude bins in [0, 1] range, symmetric layout:
+	 *  center plates = low frequency, edges = high frequency (mirrored).
+	 *  freqMin/freqMax control which Hz range maps to the plates. */
+	getFrequencyData(plateCount: number, freqMin = 0, freqMax = 0): Float32Array {
 		const output = new Float32Array(plateCount);
 		if (!this.analyser) return output;
 
 		this.analyser.getFloatFrequencyData(this.freqData);
 
-		// freqData is in dB (typically -100 to 0)
-		// Resample to plateCount bins and normalize to [0, 1]
 		const srcBins = this.analyser.frequencyBinCount;
-		for (let i = 0; i < plateCount; i++) {
-			// Map plate index to frequency bin range
-			const srcStart = Math.floor((i / plateCount) * srcBins);
-			const srcEnd = Math.floor(((i + 1) / plateCount) * srcBins);
+		const nyquist = this.sampleRate / 2;
+		if (freqMax <= 0) freqMax = nyquist;
+
+		// Convert freq range to bin range
+		const binMin = Math.floor((freqMin / nyquist) * srcBins);
+		const binMax = Math.min(Math.ceil((freqMax / nyquist) * srcBins), srcBins);
+		const rangeBins = Math.max(1, binMax - binMin);
+
+		// Symmetric mapping: center = freqMin, edges = freqMax
+		const half = plateCount / 2;
+
+		for (let i = 0; i < Math.ceil(half); i++) {
+			const freqFrac = i / half; // 0 at center, 1 at edge
+			const srcStart = binMin + Math.floor(freqFrac * rangeBins);
+			const srcEnd = binMin + Math.floor(((i + 1) / half) * rangeBins);
 			let sum = 0;
 			let count = 0;
-			for (let j = srcStart; j < srcEnd && j < srcBins; j++) {
+			for (let j = srcStart; j < srcEnd && j < binMax; j++) {
 				sum += this.freqData[j];
 				count++;
 			}
@@ -98,8 +133,16 @@ export class AudioInput {
 				count = 1;
 			}
 			const avgDb = sum / count;
-			// Normalize: -100dB → 0, -10dB → 1 (with clamp)
-			output[i] = Math.max(0, Math.min(1, (avgDb + 100) / 90));
+			// Noise floor cutoff: anything below -85dB is silence
+			const value = avgDb < -85 ? 0 : Math.max(0, Math.min(1, (avgDb + 85) / 75));
+
+			// Right half
+			const rightIdx = Math.floor(half) + i;
+			if (rightIdx < plateCount) output[rightIdx] = value;
+
+			// Left half (mirror)
+			const leftIdx = Math.floor(half) - 1 - i;
+			if (leftIdx >= 0) output[leftIdx] = value;
 		}
 
 		return output;

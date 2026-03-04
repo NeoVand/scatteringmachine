@@ -81,6 +81,8 @@
 		if (freqMax <= freqMin) freqMin = freqMax - 100;
 		audioOutput.setFreqRange(freqMin, freqMax);
 	}
+
+
 </script>
 
 <input type="file" accept="audio/*" class="hidden" bind:this={fileInput} onchange={handleFileSelect} />
@@ -152,6 +154,19 @@
 			</div>
 
 			<div class="mb-3">
+				<span class="mb-1 block text-gray-500">Plate Reach: {Math.round(simState.plateReach * 100)}%</span>
+				<input
+					type="range"
+					min="0.05"
+					max="0.5"
+					step="0.05"
+					value={simState.plateReach}
+					oninput={(e) => simState.plateReach = parseFloat(e.currentTarget.value)}
+					class="w-full accent-blue-500"
+				/>
+			</div>
+
+			<div class="mb-3">
 				<span class="mb-1 block text-gray-500">Gravity: {simState.gravity}</span>
 				<input
 					type="range"
@@ -160,6 +175,53 @@
 					step="10"
 					value={simState.gravity}
 					oninput={(e) => simState.gravity = parseInt(e.currentTarget.value)}
+					class="w-full accent-blue-500"
+				/>
+			</div>
+
+			<div class="mb-3">
+				<div class="mb-1 flex items-center justify-between">
+					<span class="text-gray-500">Plates: {simState.plateCount}</span>
+					<button
+						class="rounded px-2 py-0.5 {simState.platesVisible ? 'bg-blue-600/80 text-white' : 'bg-gray-800 text-gray-400'}"
+						onclick={() => simState.platesVisible = !simState.platesVisible}
+					>
+						{simState.platesVisible ? 'Visible' : 'Hidden'}
+					</button>
+				</div>
+				<input
+					type="range"
+					min="8"
+					max="256"
+					step="8"
+					value={simState.plateCount}
+					oninput={(e) => simState.plateCount = parseInt(e.currentTarget.value)}
+					class="w-full accent-blue-500"
+				/>
+			</div>
+
+			<div class="mb-3">
+				<span class="mb-1 block text-gray-500">Stiffness: {simState.stiffness}</span>
+				<input
+					type="range"
+					min="100"
+					max="50000"
+					step="100"
+					value={simState.stiffness}
+					oninput={(e) => simState.stiffness = parseInt(e.currentTarget.value)}
+					class="w-full accent-blue-500"
+				/>
+			</div>
+
+			<div class="mb-3">
+				<span class="mb-1 block text-gray-500">Viscosity: {simState.viscosity}</span>
+				<input
+					type="range"
+					min="0"
+					max="200"
+					step="1"
+					value={simState.viscosity}
+					oninput={(e) => simState.viscosity = parseInt(e.currentTarget.value)}
 					class="w-full accent-blue-500"
 				/>
 			</div>
@@ -181,6 +243,28 @@
 						onclick={() => setAudioSource('file')}
 					>File</button>
 				</div>
+				{#if audioSource !== 'none'}
+					<div class="mt-2 space-y-2">
+						<div>
+							<span class="text-gray-500">Low freq: {simState.inputFreqMin}Hz</span>
+							<input
+								type="range" min="0" max="2000" step="10"
+								value={simState.inputFreqMin}
+								oninput={(e) => { simState.inputFreqMin = parseInt(e.currentTarget.value); if (simState.inputFreqMin >= simState.inputFreqMax) simState.inputFreqMax = simState.inputFreqMin + 100; }}
+								class="w-full accent-blue-500"
+							/>
+						</div>
+						<div>
+							<span class="text-gray-500">High freq: {simState.inputFreqMax}Hz</span>
+							<input
+								type="range" min="500" max="22000" step="100"
+								value={simState.inputFreqMax}
+								oninput={(e) => { simState.inputFreqMax = parseInt(e.currentTarget.value); if (simState.inputFreqMax <= simState.inputFreqMin) simState.inputFreqMin = simState.inputFreqMax - 100; }}
+								class="w-full accent-blue-500"
+							/>
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Audio Output -->

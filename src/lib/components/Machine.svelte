@@ -15,6 +15,8 @@
 	const audioInput = new AudioInput();
 	const audioOutput = new AudioOutput();
 
+	let wasPlaying = true;
+
 	function handleReset() {
 		simState.needsBufferRealloc = true;
 	}
@@ -64,22 +66,45 @@
 				sim!.setPlaying(simState.isPlaying);
 				sim!.setDamping(simState.damping);
 				sim!.setGravity(simState.gravity);
+				sim!.setPlateReach(simState.plateReach);
+				sim!.setDetectorsActive(audioOutput.isActive);
+				sim!.setPlatesVisible(simState.platesVisible);
+				sim!.setStiffness(simState.stiffness);
+				sim!.setViscosity(simState.viscosity);
+
+				// Pause/resume audio input when play state changes
+				if (simState.isPlaying !== wasPlaying) {
+					if (simState.isPlaying) {
+						audioInput.resume();
+					} else {
+						audioInput.pause();
+					}
+					wasPlaying = simState.isPlaying;
+				}
 
 				if (simState.needsBufferRealloc) {
-					sim!.rebuild(simState.particleCount, simState.particleRadius);
+					sim!.rebuild(simState.particleCount, simState.particleRadius, simState.plateCount, simState.detectorCount);
 					simState.needsBufferRealloc = false;
 				}
 
 				// Audio input → plate forces (or demo oscillation if no audio)
-				if (audioInput.isActive) {
-					const forces = audioInput.getFrequencyData(sim!.plateCount);
+				if (audioInput.hasSource) {
+					const forces = audioInput.isActive
+						? audioInput.getFrequencyData(
+							sim!.plateCount,
+							simState.inputFreqMin,
+							simState.inputFreqMax
+						)
+						: new Float32Array(sim!.plateCount); // zeros when paused
 					sim!.setPlateForces(forces);
 				} else {
-					// Demo: travelling wave across plates (equal time extended for all)
+					// Demo: symmetric wave emanating from center
 					const t = performance.now() * 0.001;
 					const forces = new Float32Array(sim!.plateCount);
+					const center = (forces.length - 1) / 2;
 					for (let i = 0; i < forces.length; i++) {
-						const phase = (i / forces.length) * Math.PI * 4;
+						const dist = Math.abs(i - center) / center;
+						const phase = dist * Math.PI * 4;
 						forces[i] = Math.max(0, Math.sin(t * 3.0 + phase)) * 0.8;
 					}
 					sim!.setPlateForces(forces);
