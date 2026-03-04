@@ -1,8 +1,3 @@
-/**
- * Audio output via AudioWorklet.
- * Receives detector readings (frequency-domain magnitudes) and synthesizes audio
- * using additive synthesis (sum of sine oscillators).
- */
 export class AudioOutput {
 	private ctx: AudioContext | null = null;
 	private workletNode: AudioWorkletNode | null = null;
@@ -36,10 +31,27 @@ export class AudioOutput {
 		this.ready = true;
 	}
 
-	/** Send detector readings to the synth worklet */
 	sendReadings(readings: Float32Array) {
 		if (!this.workletNode || !this.ready) return;
 		this.workletNode.port.postMessage(readings);
+	}
+
+	/** Immediately silence all ringing envelopes */
+	clear() {
+		if (!this.workletNode || !this.ready) return;
+		this.workletNode.port.postMessage({ type: 'clear' });
+	}
+
+	/** Set decay time in seconds (e.g. 0.01 = 10ms, 0.1 = 100ms) */
+	setDecay(seconds: number) {
+		if (!this.workletNode || !this.ready) return;
+		this.workletNode.port.postMessage({ type: 'setDecay', value: seconds });
+	}
+
+	/** Set frequency range for detector bin mapping */
+	setFreqRange(min: number, max: number) {
+		if (!this.workletNode || !this.ready) return;
+		this.workletNode.port.postMessage({ type: 'setFreqRange', min, max });
 	}
 
 	setVolume(v: number) {

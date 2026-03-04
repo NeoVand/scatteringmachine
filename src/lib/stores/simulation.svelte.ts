@@ -33,7 +33,7 @@ export function getSimState() {
 			return damping;
 		},
 		set damping(v: number) {
-			damping = Math.max(0.9, Math.min(1, v));
+			damping = Math.max(0.5, Math.min(1, v));
 		},
 		get plateCount() {
 			return plateCount;

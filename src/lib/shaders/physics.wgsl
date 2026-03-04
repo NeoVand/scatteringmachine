@@ -3,7 +3,7 @@ struct Uniforms {
 	dt: f32,
 	particleCount: u32,
 	particleRadius: f32,
-	damping: f32,
+	damping: f32, // coefficient of restitution (1.0 = elastic, <1 = energy loss on collision)
 	gridW: u32,
 	gridH: u32,
 	cellSize: f32,
@@ -34,6 +34,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	var vel = velIn[i];
 	let r = u.particleRadius;
 	let minDist = 2.0 * r;
+	let e = u.damping; // coefficient of restitution
 
 	// My cell coordinates
 	let myCX = min(u32(pos.x / u.cellSize), u.gridW - 1u);
@@ -65,12 +66,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 					let normal = delta / dist;
 					let overlap = minDist - dist;
 
-					// Elastic collision (equal mass)
+					// Collision with coefficient of restitution (equal mass)
 					let relVel = vel - vj;
 					let vnRel = dot(relVel, normal);
 
 					if (vnRel < 0.0) {
-						vel -= vnRel * normal;
+						vel -= (1.0 + e) * 0.5 * vnRel * normal;
 					}
 
 					// Separate overlap
@@ -79,9 +80,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 			}
 		}
 	}
-
-	// Damping
-	vel *= u.damping;
 
 	// Velocity cap + NaN protection
 	let speed = length(vel);
@@ -92,22 +90,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	// Integration
 	pos += vel * u.dt;
 
-	// Wall collisions — AFTER integration so we catch overshoots and fix velocity
+	// Wall collisions with restitution — AFTER integration
 	if (pos.x - r < 0.0) {
 		pos.x = r;
-		vel.x = abs(vel.x);
+		vel.x = abs(vel.x) * e;
 	}
 	if (pos.x + r > u.boxSize.x) {
 		pos.x = u.boxSize.x - r;
-		vel.x = -abs(vel.x);
+		vel.x = -abs(vel.x) * e;
 	}
 	if (pos.y - r < 0.0) {
 		pos.y = r;
-		vel.y = abs(vel.y);
+		vel.y = abs(vel.y) * e;
 	}
 	if (pos.y + r > u.boxSize.y) {
 		pos.y = u.boxSize.y - r;
-		vel.y = -abs(vel.y);
+		vel.y = -abs(vel.y) * e;
 	}
 
 	// NaN protection for position

@@ -16,6 +16,9 @@
 	let audioSource = $state<'none' | 'mic' | 'file'>('none');
 	let audioOutEnabled = $state(false);
 	let outputVolume = $state(0.3);
+	let decayMs = $state(15);
+	let freqMin = $state(120);
+	let freqMax = $state(4000);
 	let collapsed = $state(false);
 	let fileInput: HTMLInputElement = $state(null!);
 
@@ -51,6 +54,8 @@
 			audioOutEnabled = false;
 		} else {
 			await audioOutput.start(simState.detectorCount, outputVolume);
+			audioOutput.setDecay(decayMs / 1000);
+			audioOutput.setFreqRange(freqMin, freqMax);
 			audioOutEnabled = true;
 		}
 	}
@@ -58,6 +63,23 @@
 	function handleVolumeChange(e: Event) {
 		outputVolume = parseFloat((e.target as HTMLInputElement).value);
 		audioOutput.setVolume(outputVolume);
+	}
+
+	function handleDecayChange(e: Event) {
+		decayMs = parseFloat((e.target as HTMLInputElement).value);
+		audioOutput.setDecay(decayMs / 1000);
+	}
+
+	function handleFreqMinChange(e: Event) {
+		freqMin = parseInt((e.target as HTMLInputElement).value);
+		if (freqMin >= freqMax) freqMax = freqMin + 100;
+		audioOutput.setFreqRange(freqMin, freqMax);
+	}
+
+	function handleFreqMaxChange(e: Event) {
+		freqMax = parseInt((e.target as HTMLInputElement).value);
+		if (freqMax <= freqMin) freqMin = freqMax - 100;
+		audioOutput.setFreqRange(freqMin, freqMax);
 	}
 </script>
 
@@ -117,12 +139,12 @@
 			</div>
 
 			<div class="mb-3">
-				<span class="mb-1 block text-gray-500">Damping: {simState.damping.toFixed(3)}</span>
+				<span class="mb-1 block text-gray-500">Elasticity: {simState.damping.toFixed(2)}</span>
 				<input
 					type="range"
-					min="0.9"
+					min="0.5"
 					max="1"
-					step="0.001"
+					step="0.01"
 					value={simState.damping}
 					oninput={(e) => simState.damping = parseFloat(e.currentTarget.value)}
 					class="w-full accent-blue-500"
@@ -149,7 +171,7 @@
 			</div>
 
 			<!-- Audio Output -->
-			<div class="mb-2 border-t border-gray-700 pt-2">
+			<div class="border-t border-gray-700 pt-2">
 				<div class="mb-1 flex items-center justify-between">
 					<span class="text-gray-500">Audio Output</span>
 					<button
@@ -160,15 +182,44 @@
 					</button>
 				</div>
 				{#if audioOutEnabled}
-					<input
-						type="range"
-						min="0"
-						max="1"
-						step="0.01"
-						value={outputVolume}
-						oninput={handleVolumeChange}
-						class="w-full accent-red-500"
-					/>
+					<div class="mt-1 space-y-2">
+						<div>
+							<span class="text-gray-500">Volume</span>
+							<input
+								type="range" min="0" max="1" step="0.01"
+								value={outputVolume}
+								oninput={handleVolumeChange}
+								class="w-full accent-red-500"
+							/>
+						</div>
+						<div>
+							<span class="text-gray-500">Decay: {decayMs}ms</span>
+							<input
+								type="range" min="3" max="200" step="1"
+								value={decayMs}
+								oninput={handleDecayChange}
+								class="w-full accent-red-500"
+							/>
+						</div>
+						<div>
+							<span class="text-gray-500">Low freq: {freqMin}Hz</span>
+							<input
+								type="range" min="20" max="2000" step="10"
+								value={freqMin}
+								oninput={handleFreqMinChange}
+								class="w-full accent-red-500"
+							/>
+						</div>
+						<div>
+							<span class="text-gray-500">High freq: {freqMax}Hz</span>
+							<input
+								type="range" min="500" max="12000" step="100"
+								value={freqMax}
+								oninput={handleFreqMaxChange}
+								class="w-full accent-red-500"
+							/>
+						</div>
+					</div>
 				{/if}
 			</div>
 		</div>

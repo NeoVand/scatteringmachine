@@ -86,11 +86,15 @@
 
 				sim!.frame();
 
-				// Audio output ← detector readings
+				// Audio output ← detector readings (only when playing)
 				if (audioOutput.isActive) {
-					const readings = sim!.getDetectorReadings();
-					if (readings) {
-						audioOutput.sendReadings(readings);
+					if (simState.isPlaying) {
+						const readings = sim!.getDetectorReadings();
+						if (readings) {
+							audioOutput.sendReadings(readings);
+						}
+					} else {
+						audioOutput.clear();
 					}
 				}
 

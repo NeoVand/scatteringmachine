@@ -1,9 +1,8 @@
 /**
  * AudioWorklet processor: detector impacts → short percussive pings.
  *
- * Each detector bin maps to a frequency. When a reading arrives (particle hit
- * the right wall), it adds energy to that bin's decaying envelope. The result
- * is a short "ping" that dies out quickly — like a struck marimba bar.
+ * Each detector bin maps to a frequency. Impacts add energy to a decaying
+ * envelope, producing short pings that die out quickly.
  */
 class DetectorSynth extends AudioWorkletProcessor {
 	private envelopes: Float32Array;
@@ -11,37 +10,63 @@ class DetectorSynth extends AudioWorkletProcessor {
 	private frequencies: Float32Array;
 	private detectorCount: number;
 	private decay: number;
+	private minFreq: number;
+	private maxFreq: number;
 
 	constructor(options: AudioWorkletNodeOptions) {
 		super();
 		this.detectorCount = options.processorOptions?.detectorCount ?? 64;
 		this.envelopes = new Float32Array(this.detectorCount);
 		this.phases = new Float32Array(this.detectorCount);
-
-		// Map detector bins to frequencies (80Hz to 6000Hz, log-spaced)
 		this.frequencies = new Float32Array(this.detectorCount);
-		const minFreq = 80;
-		const maxFreq = 6000;
-		for (let i = 0; i < this.detectorCount; i++) {
-			const t = i / Math.max(1, this.detectorCount - 1);
-			this.frequencies[i] = minFreq * Math.pow(maxFreq / minFreq, t);
-		}
 
-		// Decay per sample: ~40ms decay time (amplitude drops to 1/e in 40ms)
-		// decay = exp(-1 / (sampleRate * decayTime))
-		this.decay = Math.exp(-1 / (sampleRate * 0.04));
+		this.minFreq = 120;
+		this.maxFreq = 4000;
+		this.rebuildFrequencies();
+
+		// Default ~15ms decay
+		this.decay = Math.exp(-1 / (sampleRate * 0.015));
 
 		this.port.onmessage = (e: MessageEvent) => {
-			const readings = e.data as Float32Array;
+			const msg = e.data;
+
+			// Handle control messages
+			if (msg && typeof msg === 'object' && msg.type) {
+				if (msg.type === 'clear') {
+					this.envelopes.fill(0);
+					return;
+				}
+				if (msg.type === 'setDecay') {
+					// msg.value is decay time in seconds
+					this.decay = Math.exp(-1 / (sampleRate * msg.value));
+					return;
+				}
+				if (msg.type === 'setFreqRange') {
+					this.minFreq = msg.min;
+					this.maxFreq = msg.max;
+					this.rebuildFrequencies();
+					return;
+				}
+				return;
+			}
+
+			// Float32Array = detector readings (impulses)
+			const readings = msg as Float32Array;
 			for (let i = 0; i < this.detectorCount && i < readings.length; i++) {
-				// Each reading is an impulse — add its energy to the envelope
 				const impact = Math.abs(readings[i]);
-				if (impact > 0.1) {
-					// Scale impact to reasonable amplitude and ADD to envelope
-					this.envelopes[i] += Math.min(impact / 50.0, 1.0);
+				if (impact > 0.5) {
+					// Add impulse energy, cap per-bin envelope to prevent blowup
+					this.envelopes[i] = Math.min(this.envelopes[i] + impact / 80.0, 1.5);
 				}
 			}
 		};
+	}
+
+	private rebuildFrequencies() {
+		for (let i = 0; i < this.detectorCount; i++) {
+			const t = i / Math.max(1, this.detectorCount - 1);
+			this.frequencies[i] = this.minFreq * Math.pow(this.maxFreq / this.minFreq, t);
+		}
 	}
 
 	process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -55,17 +80,17 @@ class DetectorSynth extends AudioWorkletProcessor {
 			let sample = 0;
 
 			for (let i = 0; i < this.detectorCount; i++) {
-				if (this.envelopes[i] < 0.0001) continue;
+				if (this.envelopes[i] < 0.0001) {
+					this.envelopes[i] = 0;
+					continue;
+				}
 
-				// Sine oscillator * decaying envelope
 				sample += Math.sin(this.phases[i]) * this.envelopes[i];
 				this.phases[i] += 2 * Math.PI * this.frequencies[i] * dt;
-
-				// Exponential decay
 				this.envelopes[i] *= decay;
 			}
 
-			output[s] = sample * 0.12;
+			output[s] = sample * 0.1;
 		}
 
 		// Keep phases bounded
