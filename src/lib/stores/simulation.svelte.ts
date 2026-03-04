@@ -4,6 +4,7 @@ let isPlaying = $state(true);
 let damping = $state(0.995);
 let plateCount = $state(64);
 let detectorCount = $state(64);
+let gravity = $state(0);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
 
 let needsBufferRealloc = $state(false);
@@ -46,6 +47,12 @@ export function getSimState() {
 		},
 		set detectorCount(v: number) {
 			detectorCount = Math.max(1, Math.min(512, v));
+		},
+		get gravity() {
+			return gravity;
+		},
+		set gravity(v: number) {
+			gravity = Math.max(0, Math.min(500, v));
 		},
 		get potentialType() {
 			return potentialType;

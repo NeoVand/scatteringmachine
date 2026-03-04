@@ -151,6 +151,19 @@
 				/>
 			</div>
 
+			<div class="mb-3">
+				<span class="mb-1 block text-gray-500">Gravity: {simState.gravity}</span>
+				<input
+					type="range"
+					min="0"
+					max="500"
+					step="10"
+					value={simState.gravity}
+					oninput={(e) => simState.gravity = parseInt(e.currentTarget.value)}
+					class="w-full accent-blue-500"
+				/>
+			</div>
+
 			<!-- Audio Input -->
 			<div class="mb-3 border-t border-gray-700 pt-2">
 				<span class="mb-1 block text-gray-500">Audio Input</span>

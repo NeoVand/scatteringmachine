@@ -10,6 +10,7 @@ struct Uniforms {
 	plateCount: u32,
 	detectorCount: u32,
 	plateDepth: f32,
+	gravity: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -89,6 +90,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 		totalSep *= (r * 2.0) / sepLen;
 	}
 	pos += totalSep;
+
+	// Gravity (positive Y = toward bottom of screen where plates are)
+	vel.y += u.gravity * u.dt;
 
 	// Velocity cap + NaN protection
 	let speed = length(vel);

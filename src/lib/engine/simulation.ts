@@ -30,6 +30,7 @@ export interface Simulation {
 	resize(w: number, h: number): void;
 	rebuild(count: number, radius: number): void;
 	setDamping(v: number): void;
+	setGravity(v: number): void;
 	setPlaying(v: boolean): void;
 	setPlateForces(forces: Float32Array): void;
 	getDetectorReadings(): Float32Array | null;
@@ -53,15 +54,16 @@ export function createSimulation(
 	let nPlates = plateCount;
 	let nDetectors = detectorCount;
 	let damping = 0.999;
+	let gravity = 0;
 	let playing = true;
 	let readFromA = true;
 	let destroyed = false;
 	let pendingReadback = false;
 	let latestDetectorReadings: Float32Array | null = null;
 
-	const plateDepthFraction = 0.12; // 12% of box width for plates/detectors
+	const plateDepthFraction = 0.12; // 12% of box height for plates/detectors
 	function getPlateDepth() {
-		return boxWidth * plateDepthFraction;
+		return boxHeight * plateDepthFraction;
 	}
 
 	let grid: GridConfig = computeGridConfig(boxWidth, boxHeight, radius);
@@ -398,7 +400,8 @@ export function createSimulation(
 			cellSize: grid.cellSize,
 			plateCount: nPlates,
 			detectorCount: nDetectors,
-			plateDepth
+			plateDepth,
+			gravity
 		});
 
 		const encoder = device.createCommandEncoder();
@@ -581,6 +584,7 @@ export function createSimulation(
 		resize,
 		rebuild,
 		setDamping(v: number) { damping = v; },
+		setGravity(v: number) { gravity = v; },
 		setPlaying(v: boolean) { playing = v; },
 		setPlateForces(forces: Float32Array) {
 			device.queue.writeBuffer(ioBuf.plateForces, 0, forces, 0, Math.min(forces.length, nPlates));

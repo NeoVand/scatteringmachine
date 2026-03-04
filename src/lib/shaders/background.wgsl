@@ -10,6 +10,7 @@ struct Uniforms {
 	plateCount: u32,
 	detectorCount: u32,
 	plateDepth: f32,
+	gravity: f32,
 };
 
 struct VSOut {
@@ -42,47 +43,50 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 
 	var color = vec3<f32>(0.0);
 
-	// === PLATES (left side) — solid bars extending rightward ===
-	let plateHeight = u.boxSize.y / f32(u.plateCount);
-	let plateIdx = min(u32(worldPos.y / plateHeight), u.plateCount - 1u);
+	// === PLATES (bottom of screen = large worldPos.y) ===
+	// Plates extend from boxSize.y upward (decreasing y)
+	let plateWidth = u.boxSize.x / f32(u.plateCount);
+	let plateIdx = min(u32(worldPos.x / plateWidth), u.plateCount - 1u);
 	let force = abs(plateForces[plateIdx]);
 	let extension = force * maxExtension;
+	let plateTop = u.boxSize.y - extension; // top edge of plate bar (smallest y)
 
-	// Plate track/rail (always visible behind plates)
-	if (worldPos.x < u.plateDepth * 0.15) {
+	// Plate track/rail (always visible behind plates at very bottom)
+	if (worldPos.y > u.boxSize.y - u.plateDepth * 0.15) {
 		color = vec3<f32>(0.03, 0.04, 0.06);
-		let plateFrac = fract(worldPos.y / plateHeight);
+		let plateFrac = fract(worldPos.x / plateWidth);
 		let edge = smoothstep(0.0, 0.015, plateFrac) * smoothstep(0.0, 0.015, 1.0 - plateFrac);
 		color *= edge;
 	}
 
 	// The solid plate bar itself
-	if (worldPos.x < extension) {
-		let plateFrac = fract(worldPos.y / plateHeight);
+	if (worldPos.y > plateTop) {
+		let plateFrac = fract(worldPos.x / plateWidth);
 		let edge = smoothstep(0.0, 0.01, plateFrac) * smoothstep(0.0, 0.01, 1.0 - plateFrac);
 
 		// Bar body — metallic blue-gray
-		let barT = worldPos.x / max(extension, 1.0);
+		// barT = 0 at bottom wall, 1 at tip (top edge of bar)
+		let barT = (u.boxSize.y - worldPos.y) / max(extension, 1.0);
 		let barColor = mix(
-			vec3<f32>(0.12, 0.18, 0.28),  // base
+			vec3<f32>(0.12, 0.18, 0.28),  // base (near bottom wall)
 			vec3<f32>(0.2, 0.35, 0.55),   // tip highlight
 			barT
 		);
 
-		// Leading edge highlight
-		let tipDist = abs(worldPos.x - extension);
+		// Leading edge highlight (tip of bar = smallest y of plate)
+		let tipDist = abs(worldPos.y - plateTop);
 		let tipGlow = exp(-tipDist * tipDist * 0.01) * force * 0.4;
 		color = barColor * edge + vec3<f32>(0.3, 0.6, 1.0) * tipGlow;
 	}
 
-	// === DETECTORS (right side) — sensor pads ===
-	let detectorX = u.boxSize.x - u.plateDepth;
-	if (worldPos.x > detectorX) {
-		let detHeight = u.boxSize.y / f32(u.detectorCount);
-		let detIdx = min(u32(worldPos.y / detHeight), u.detectorCount - 1u);
+	// === DETECTORS (top of screen = small worldPos.y) ===
+	let detectorY = u.plateDepth; // detector zone from y=0 to y=plateDepth
+	if (worldPos.y < detectorY) {
+		let detWidth = u.boxSize.x / f32(u.detectorCount);
+		let detIdx = min(u32(worldPos.x / detWidth), u.detectorCount - 1u);
 		let reading = abs(detectorReadings[detIdx]);
 
-		let detFrac = fract(worldPos.y / detHeight);
+		let detFrac = fract(worldPos.x / detWidth);
 		let edge = smoothstep(0.0, 0.015, detFrac) * smoothstep(0.0, 0.015, 1.0 - detFrac);
 
 		// Sensor pad base

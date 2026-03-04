@@ -10,6 +10,7 @@ struct Uniforms {
 	plateCount: u32,
 	detectorCount: u32,
 	plateDepth: f32,
+	gravity: f32,
 };
 
 struct VSOut {

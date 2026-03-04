@@ -63,6 +63,7 @@
 
 				sim!.setPlaying(simState.isPlaying);
 				sim!.setDamping(simState.damping);
+				sim!.setGravity(simState.gravity);
 
 				if (simState.needsBufferRealloc) {
 					sim!.rebuild(simState.particleCount, simState.particleRadius);

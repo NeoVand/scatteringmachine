@@ -10,6 +10,7 @@ struct Uniforms {
 	plateCount: u32,
 	detectorCount: u32,
 	plateDepth: f32,
+	gravity: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -26,20 +27,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let vel = velocities[i];
 	let r = u.particleRadius;
 
-	// Only detect particles hitting the right wall:
-	// within 1 radius of the wall AND moving rightward (into the wall)
-	let wallX = u.boxSize.x - r;
-	let hitZone = r * 3.0; // small zone near wall
-	if (pos.x < wallX - hitZone || vel.x <= 0.0) { return; }
+	// Detect particles near the top wall (y near 0 = top of screen)
+	// Moving upward = vel.y < 0 (decreasing y)
+	let wallY = r;
+	let hitZone = r * 3.0;
+	if (pos.y > wallY + hitZone || vel.y >= 0.0) { return; }
 
-	// Which detector bin?
-	let detHeight = u.boxSize.y / f32(u.detectorCount);
-	let detIdx = min(u32(pos.y / detHeight), u.detectorCount - 1u);
+	// Which detector bin? (binned by X position)
+	let detWidth = u.boxSize.x / f32(u.detectorCount);
+	let detIdx = min(u32(pos.x / detWidth), u.detectorCount - 1u);
 
-	// Impact momentum = velocity toward wall (positive x)
-	// Stronger signal for faster particles closer to the wall
-	let closeness = 1.0 - max(0.0, wallX - pos.x) / hitZone;
-	let momentum = vel.x * closeness;
+	// Impact momentum = velocity toward wall (magnitude of negative y velocity)
+	let closeness = 1.0 - max(0.0, pos.y - wallY) / hitZone;
+	let momentum = -vel.y * closeness;
 	let fixedPoint = i32(momentum * 1000.0);
 
 	atomicAdd(&detectorReadings[detIdx], fixedPoint);
