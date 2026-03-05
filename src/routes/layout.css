@@ -2,11 +2,92 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
+/* CSS Custom Properties for consistent theming */
+:root {
+	/* Background colors */
+	--bg-base: #0a0a10;
+	--bg-panel: rgba(8, 8, 12, 0.92);
+	--bg-elevated: rgba(20, 20, 25, 0.98);
+	--bg-subtle: rgba(255, 255, 255, 0.02);
+	--bg-muted: rgba(255, 255, 255, 0.05);
+	--bg-hover: rgba(255, 255, 255, 0.08);
+
+	/* Border colors */
+	--border-subtle: rgba(255, 255, 255, 0.06);
+	--border-muted: rgba(255, 255, 255, 0.1);
+	--border-default: rgba(255, 255, 255, 0.12);
+
+	/* Text colors */
+	--text-primary: #f4f4f5;
+	--text-secondary: #e4e4e7;
+	--text-muted: #a1a1aa;
+	--text-subtle: #71717a;
+
+	/* Accent colors */
+	--accent-indigo: rgb(99, 102, 241);
+	--accent-indigo-muted: rgba(99, 102, 241, 0.2);
+	--accent-cyan: #22d3ee;
+	--accent-cyan-muted: rgba(34, 211, 238, 0.2);
+	--accent-blue: #3b82f6;
+	--accent-blue-muted: rgba(59, 130, 246, 0.2);
+	--accent-red: #ef4444;
+	--accent-red-muted: rgba(239, 68, 68, 0.2);
+	--accent-amber: #fbbf24;
+	--accent-amber-muted: rgba(251, 191, 36, 0.2);
+	--accent-purple: #a78bfa;
+	--accent-purple-muted: rgba(167, 139, 250, 0.2);
+	--accent-pink: #f472b6;
+	--accent-green: #34d399;
+	--accent-green-muted: rgba(52, 211, 153, 0.2);
+
+	/* Transitions */
+	--transition-fast: 0.1s ease;
+	--transition-normal: 0.15s ease;
+	--transition-slow: 0.2s ease;
+}
+
+/* Base styles */
 html,
 body {
 	height: 100%;
 	margin: 0;
 	padding: 0;
 	overflow: hidden;
-	background: #0a0a10;
+	background: var(--bg-base);
+	font-family:
+		'Inter',
+		-apple-system,
+		BlinkMacSystemFont,
+		'Segoe UI',
+		Roboto,
+		sans-serif;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 5px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: rgba(113, 113, 122, 0.3);
+	border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: rgba(113, 113, 122, 0.5);
+}
+
+/* Firefox scrollbar */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(113, 113, 122, 0.3) transparent;
 }

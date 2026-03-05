@@ -35,52 +35,75 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 	let maxExtension = u.plateDepth * 0.85;
 	let plateWidth = u.boxSize.x / f32(u.plateCount);
 
-	// Which plate(s) could this particle overlap with?
-	let pxMin = pos.x - r;
-	let pxMax = pos.x + r;
-	let plateIdxMin = max(0, i32(pxMin / plateWidth));
-	let plateIdxMax = min(i32(u.plateCount) - 1, i32(pxMax / plateWidth));
+	// Bar inset must match the rendering in background.wgsl (barInset = 0.15)
+	let barInset = 0.15;
 
-	for (var pi = plateIdxMin; pi <= plateIdxMax; pi++) {
+	// Which plate column is this particle in?
+	let plateIdx = clamp(i32(pos.x / plateWidth), 0, i32(u.plateCount) - 1);
+
+	// Check this plate and immediate neighbors (particle radius can overlap)
+	let checkMin = max(0, plateIdx - 1);
+	let checkMax = min(i32(u.plateCount) - 1, plateIdx + 1);
+
+	for (var pi = checkMin; pi <= checkMax; pi++) {
 		let force = plateForces[pi];
-		if (force < 0.01) { continue; }
 		let extension = force * maxExtension;
+		if (extension < 0.5) { continue; }
 
-		// Plate occupies: x in [pi*plateWidth, (pi+1)*plateWidth],
-		//                  y in [boxSize.y - extension, boxSize.y]
-		let plateLeft = f32(pi) * plateWidth;
-		let plateRight = f32(pi + 1) * plateWidth;
-		let plateTop = u.boxSize.y - extension; // top edge of plate (smallest y)
+		// Bar edges (matching rendered bar width)
+		let cellLeft = f32(pi) * plateWidth;
+		let barLeft = cellLeft + plateWidth * barInset;
+		let barRight = cellLeft + plateWidth * (1.0 - barInset);
+		let plateTop = u.boxSize.y - extension;
 
-		// AABB vs circle
-		let nearestX = clamp(pos.x, plateLeft, plateRight);
+		// Plate upward velocity
+		let plateVelY = -force * maxExtension * 8.0;
+
+		// AABB vs circle: find nearest point on bar rectangle to particle center
+		let nearestX = clamp(pos.x, barLeft, barRight);
 		let nearestY = clamp(pos.y, plateTop, u.boxSize.y);
 		let dx = pos.x - nearestX;
 		let dy = pos.y - nearestY;
 		let dist2 = dx * dx + dy * dy;
 
-		if (dist2 < r * r && dist2 > 0.0) {
-			let dist = sqrt(dist2);
-			let nx = dx / dist;
-			let ny = dy / dist;
-			let penetration = r - dist;
+		// === SOLID COLLISION: particle overlaps bar ===
+		if (dist2 < r * r) {
+			if (dist2 > 0.0001) {
+				// Particle center is outside bar — push along normal
+				let dist = sqrt(dist2);
+				let nx = dx / dist;
+				let ny = dy / dist;
+				let penetration = r - dist;
 
-			// Push position out of plate
-			pos += vec2(nx, ny) * penetration;
+				pos += vec2<f32>(nx, ny) * penetration;
 
-			// Plate velocity ~ how fast it's extending (upward = negative y)
-			let plateVelY = -force * 300.0;
-
-			// If particle is moving toward the plate, reflect + add plate momentum
-			let vnRel = vel.x * nx + vel.y * ny;
-			if (vnRel < plateVelY * ny) {
-				vel.x += -vnRel * nx * 0.5;
-				vel.y += (-vnRel + plateVelY) * ny * 0.5;
+				// Reflect velocity component into bar + transfer plate momentum
+				let vn = vel.x * nx + vel.y * ny;
+				if (vn < 0.0) {
+					// Remove inward velocity and add bounce
+					vel -= vec2<f32>(nx, ny) * vn * 1.3;
+				}
+				// Transfer upward plate momentum
+				if (ny < -0.3 && vel.y > plateVelY * 0.5) {
+					vel.y = plateVelY * 0.7;
+				}
+			} else {
+				// Particle center is inside bar — eject upward
+				pos.y = plateTop - r;
+				if (vel.y > plateVelY) {
+					vel.y = plateVelY;
+				}
 			}
-		} else if (dist2 == 0.0 && extension > r) {
-			// Particle center is inside plate — bounded push upward (toward smaller y)
-			pos.y = max(pos.y - r * 2.0, plateTop - r);
-			vel.y = min(vel.y, -force * 300.0);
+		}
+
+		// === PUSH ZONE: particles just above the plate tip get swept along ===
+		let pushZone = r * 3.0;
+		let distAbove = plateTop - pos.y - r;
+		let inBarX = pos.x > barLeft - r && pos.x < barRight + r;
+		if (inBarX && distAbove > 0.0 && distAbove < pushZone && force > 0.05) {
+			let proximity = 1.0 - distAbove / pushZone;
+			let pushStrength = proximity * proximity * force;
+			vel.y += plateVelY * pushStrength * u.dt * 2.0;
 		}
 	}
 

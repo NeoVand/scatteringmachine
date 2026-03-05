@@ -120,8 +120,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 					// Short-range repulsion for deep overlaps (prevents interpenetration)
 					let minDist = 2.0 * r;
 					if (dist < minDist) {
-						let overlap = minDist - dist;
-						let repulsion = dir * overlap * 50.0;
+						let overlap = (minDist - dist) / minDist; // normalized 0-1
+						let repulsion = dir * overlap * overlap * u.stiffness * 2.0;
 						fPressure += repulsion;
 					}
 				}

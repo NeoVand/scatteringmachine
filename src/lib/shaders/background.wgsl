@@ -40,6 +40,24 @@ fn vs(@builtin(vertex_index) vid: u32) -> VSOut {
 	return out;
 }
 
+// Color palette: maps a 0-1 value to a cool→warm gradient
+fn spectrumColor(t: f32) -> vec3<f32> {
+	// Deep blue → cyan → green → yellow → orange → hot pink
+	let c0 = vec3<f32>(0.05, 0.08, 0.35); // deep blue
+	let c1 = vec3<f32>(0.0, 0.55, 0.7);   // cyan
+	let c2 = vec3<f32>(0.1, 0.8, 0.3);    // green
+	let c3 = vec3<f32>(0.9, 0.8, 0.1);    // yellow
+	let c4 = vec3<f32>(1.0, 0.35, 0.1);   // orange
+	let c5 = vec3<f32>(1.0, 0.1, 0.4);    // hot pink
+
+	let s = clamp(t, 0.0, 1.0) * 5.0;
+	if (s < 1.0) { return mix(c0, c1, s); }
+	if (s < 2.0) { return mix(c1, c2, s - 1.0); }
+	if (s < 3.0) { return mix(c2, c3, s - 2.0); }
+	if (s < 4.0) { return mix(c3, c4, s - 3.0); }
+	return mix(c4, c5, s - 4.0);
+}
+
 @fragment
 fn fs(in: VSOut) -> @location(0) vec4<f32> {
 	let worldPos = in.uv * u.boxSize;
@@ -49,39 +67,66 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 
 	// === PLATES (bottom of screen = large worldPos.y) ===
 	if (u.platesVisible > 0u) {
-		// Plates extend from boxSize.y upward (decreasing y)
 		let plateWidth = u.boxSize.x / f32(u.plateCount);
 		let plateIdx = min(u32(worldPos.x / plateWidth), u.plateCount - 1u);
 		let force = abs(plateForces[plateIdx]);
 		let extension = force * maxExtension;
-		let plateTop = u.boxSize.y - extension; // top edge of plate bar (smallest y)
+		let plateTop = u.boxSize.y - extension;
 
-		// Plate track/rail (always visible behind plates at very bottom)
-		if (worldPos.y > u.boxSize.y - u.plateDepth * 0.15) {
-			color = vec3<f32>(0.03, 0.04, 0.06);
-			let plateFrac = fract(worldPos.x / plateWidth);
-			let edge = smoothstep(0.0, 0.015, plateFrac) * smoothstep(0.0, 0.015, 1.0 - plateFrac);
-			color *= edge;
+		// Position within this plate cell
+		let plateFrac = fract(worldPos.x / plateWidth);
+		// Inset: bars are 70% of cell width, centered
+		let barInset = 0.15;
+		let inBar = step(barInset, plateFrac) * step(barInset, 1.0 - plateFrac);
+		// Smooth edges within the bar
+		let barEdge = smoothstep(barInset, barInset + 0.05, plateFrac)
+		            * smoothstep(barInset, barInset + 0.05, 1.0 - plateFrac);
+
+		// Glow aura around the tip (extends beyond the bar)
+		if (force > 0.001) {
+			let tipY = plateTop;
+			let distToTip = max(0.0, tipY - worldPos.y); // above tip
+			let distFromBottom = max(0.0, worldPos.y - tipY); // below tip (inside bar region)
+			let lateralDist = abs(plateFrac - 0.5) * plateWidth;
+			let glowRadius = max(plateWidth * 0.8, 8.0);
+
+			// Vertical glow above the tip
+			if (distToTip < glowRadius * 2.0) {
+				let glowFalloff = exp(-(distToTip * distToTip + lateralDist * lateralDist * 0.5) / (glowRadius * glowRadius));
+				let glowColor = spectrumColor(force) * force * 0.4 * glowFalloff;
+				color += glowColor;
+			}
 		}
 
-		// The solid plate bar itself
-		if (worldPos.y > plateTop) {
-			let plateFrac = fract(worldPos.x / plateWidth);
-			let edge = smoothstep(0.0, 0.01, plateFrac) * smoothstep(0.0, 0.01, 1.0 - plateFrac);
+		// The solid bar
+		if (worldPos.y > plateTop && inBar > 0.0) {
+			// barT: 0 at bottom wall, 1 at tip
+			let barT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
 
-			// Bar body — metallic blue-gray
-			// barT = 0 at bottom wall, 1 at tip (top edge of bar)
-			let barT = (u.boxSize.y - worldPos.y) / max(extension, 1.0);
-			let barColor = mix(
-				vec3<f32>(0.12, 0.18, 0.28),  // base (near bottom wall)
-				vec3<f32>(0.2, 0.35, 0.55),   // tip highlight
-				barT
-			);
+			// Base color from spectrum based on force intensity
+			let barColor = spectrumColor(force);
 
-			// Leading edge highlight (tip of bar = smallest y of plate)
+			// Darken toward the base, brighten toward the tip
+			let brightness = mix(0.15, 0.9, barT * barT);
+
+			// Inner highlight: lighter stripe down the center
+			let centerHighlight = exp(-pow((plateFrac - 0.5) * 6.0, 2.0)) * 0.3;
+
+			// Tip cap: bright highlight at the very tip
 			let tipDist = abs(worldPos.y - plateTop);
-			let tipGlow = exp(-tipDist * tipDist * 0.01) * force * 0.4;
-			color = barColor * edge + vec3<f32>(0.3, 0.6, 1.0) * tipGlow;
+			let tipHighlight = exp(-tipDist * 0.15) * 0.5 * force;
+
+			let finalBar = barColor * brightness * barEdge
+			             + barColor * centerHighlight * barEdge
+			             + vec3<f32>(1.0) * tipHighlight * barEdge;
+
+			color = max(color, finalBar);
+		}
+
+		// Subtle base strip at very bottom
+		if (worldPos.y > u.boxSize.y - 3.0) {
+			let baseColor = vec3<f32>(0.06, 0.07, 0.1) * barEdge;
+			color = max(color, baseColor);
 		}
 	}
 

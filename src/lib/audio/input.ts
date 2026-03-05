@@ -1,10 +1,13 @@
 export class AudioInput {
 	private ctx: AudioContext | null = null;
-	private analyser: AnalyserNode | null = null;
+	private analyserL: AnalyserNode | null = null;
+	private analyserR: AnalyserNode | null = null;
+	private splitter: ChannelSplitterNode | null = null;
+	private merger: ChannelMergerNode | null = null;
 	private source: MediaStreamAudioSourceNode | AudioBufferSourceNode | MediaElementAudioSourceNode | null = null;
 	private stream: MediaStream | null = null;
-	private freqData: Float32Array = new Float32Array(0);
-	private binCount = 64;
+	private freqDataL: Float32Array = new Float32Array(0);
+	private freqDataR: Float32Array = new Float32Array(0);
 
 	/** True when audio context is running (not suspended/closed) */
 	get isActive(): boolean {
@@ -13,7 +16,7 @@ export class AudioInput {
 
 	/** True when an audio source has been set up (even if paused) */
 	get hasSource(): boolean {
-		return this.analyser !== null;
+		return this.analyserL !== null;
 	}
 
 	get sampleRate(): number {
@@ -27,34 +30,54 @@ export class AudioInput {
 		return this.ctx;
 	}
 
-	private setupAnalyser(fftSize: number) {
+	private setupAnalysers() {
 		const ctx = this.ensureContext();
-		this.analyser = ctx.createAnalyser();
-		// FFT size must be power of 2, at least 2x the bin count we want
-		this.analyser.fftSize = fftSize;
-		this.analyser.smoothingTimeConstant = 0.3;
-		this.freqData = new Float32Array(this.analyser.frequencyBinCount);
+
+		this.analyserL = ctx.createAnalyser();
+		this.analyserL.fftSize = 8192;
+		this.analyserL.smoothingTimeConstant = 0.3;
+
+		this.analyserR = ctx.createAnalyser();
+		this.analyserR.fftSize = 8192;
+		this.analyserR.smoothingTimeConstant = 0.3;
+
+		this.splitter = ctx.createChannelSplitter(2);
+		this.merger = ctx.createChannelMerger(2);
+
+		this.freqDataL = new Float32Array(this.analyserL.frequencyBinCount);
+		this.freqDataR = new Float32Array(this.analyserR.frequencyBinCount);
 	}
 
-	async startMicrophone(binCount: number): Promise<void> {
-		this.stop();
-		this.binCount = binCount;
+	/** Connect source through splitter → per-channel analysers → merger → destination */
+	private connectStereoChain(connectToDestination: boolean) {
+		if (!this.source || !this.splitter || !this.analyserL || !this.analyserR || !this.merger) return;
+		const ctx = this.ensureContext();
 
-		const fftSize = nearestPow2(binCount * 2);
-		this.setupAnalyser(fftSize);
+		this.source.connect(this.splitter);
+		this.splitter.connect(this.analyserL, 0); // left channel
+		this.splitter.connect(this.analyserR, 1); // right channel
+
+		if (connectToDestination) {
+			// Recombine for playback
+			this.analyserL.connect(this.merger, 0, 0);
+			this.analyserR.connect(this.merger, 0, 1);
+			this.merger.connect(ctx.destination);
+		}
+	}
+
+	async startMicrophone(): Promise<void> {
+		this.stop();
+		this.setupAnalysers();
 
 		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		const ctx = this.ensureContext();
 		this.source = ctx.createMediaStreamSource(this.stream);
-		this.source.connect(this.analyser!);
+		this.connectStereoChain(false); // mic doesn't need playback
 	}
 
-	async loadFile(url: string, binCount: number): Promise<void> {
+	async loadFile(url: string): Promise<void> {
 		this.stop();
-		this.binCount = binCount;
-
-		const fftSize = nearestPow2(binCount * 2);
-		this.setupAnalyser(fftSize);
+		this.setupAnalysers();
 
 		const ctx = this.ensureContext();
 		const response = await fetch(url);
@@ -64,23 +87,18 @@ export class AudioInput {
 		const source = ctx.createBufferSource();
 		source.buffer = audioBuffer;
 		source.loop = true;
-		source.connect(this.analyser!);
-		this.analyser!.connect(ctx.destination);
-		source.start();
 		this.source = source;
+		this.connectStereoChain(true);
+		source.start();
 	}
 
-	connectElement(element: HTMLAudioElement | HTMLVideoElement, binCount: number): void {
+	connectElement(element: HTMLAudioElement | HTMLVideoElement): void {
 		this.stop();
-		this.binCount = binCount;
-
-		const fftSize = nearestPow2(binCount * 2);
-		this.setupAnalyser(fftSize);
+		this.setupAnalysers();
 
 		const ctx = this.ensureContext();
 		this.source = ctx.createMediaElementSource(element);
-		this.source.connect(this.analyser!);
-		this.analyser!.connect(ctx.destination);
+		this.connectStereoChain(true);
 	}
 
 	/** Pause audio playback (suspend the AudioContext) */
@@ -97,52 +115,61 @@ export class AudioInput {
 		}
 	}
 
-	/** Returns normalized FFT magnitude bins in [0, 1] range, symmetric layout:
-	 *  center plates = low frequency, edges = high frequency (mirrored).
+	/** Returns normalized FFT magnitude bins in [0, 1] range.
+	 *  Left plates = left audio channel, right plates = right audio channel.
+	 *  Each half: center = low frequency, edge = high frequency.
 	 *  freqMin/freqMax control which Hz range maps to the plates. */
 	getFrequencyData(plateCount: number, freqMin = 0, freqMax = 0): Float32Array {
 		const output = new Float32Array(plateCount);
-		if (!this.analyser) return output;
+		if (!this.analyserL || !this.analyserR) return output;
 
-		this.analyser.getFloatFrequencyData(this.freqData);
+		this.analyserL.getFloatFrequencyData(this.freqDataL);
+		this.analyserR.getFloatFrequencyData(this.freqDataR);
 
-		const srcBins = this.analyser.frequencyBinCount;
+		const srcBins = this.analyserL.frequencyBinCount;
 		const nyquist = this.sampleRate / 2;
 		if (freqMax <= 0) freqMax = nyquist;
 
-		// Convert freq range to bin range
 		const binMin = Math.floor((freqMin / nyquist) * srcBins);
 		const binMax = Math.min(Math.ceil((freqMax / nyquist) * srcBins), srcBins);
 		const rangeBins = Math.max(1, binMax - binMin);
 
-		// Symmetric mapping: center = freqMin, edges = freqMax
-		const half = plateCount / 2;
+		const half = Math.floor(plateCount / 2);
 
-		for (let i = 0; i < Math.ceil(half); i++) {
+		// Left half: left channel, index 0 = left edge (high freq), index half-1 = center (low freq)
+		// Right half: right channel, index half = center (low freq), index plateCount-1 = right edge (high freq)
+		for (let i = 0; i < half; i++) {
 			const freqFrac = i / half; // 0 at center, 1 at edge
 			const srcStart = binMin + Math.floor(freqFrac * rangeBins);
 			const srcEnd = binMin + Math.floor(((i + 1) / half) * rangeBins);
-			let sum = 0;
-			let count = 0;
+
+			// Left channel
+			let sumL = 0, countL = 0;
 			for (let j = srcStart; j < srcEnd && j < binMax; j++) {
-				sum += this.freqData[j];
-				count++;
+				sumL += this.freqDataL[j];
+				countL++;
 			}
-			if (count === 0) {
-				sum = this.freqData[Math.min(srcStart, srcBins - 1)];
-				count = 1;
+			if (countL === 0) { sumL = this.freqDataL[Math.min(srcStart, srcBins - 1)]; countL = 1; }
+			const avgDbL = sumL / countL;
+			const valueL = avgDbL < -80 ? 0 : Math.max(0, Math.min(1, (avgDbL + 80) / 55));
+
+			// Right channel
+			let sumR = 0, countR = 0;
+			for (let j = srcStart; j < srcEnd && j < binMax; j++) {
+				sumR += this.freqDataR[j];
+				countR++;
 			}
-			const avgDb = sum / count;
-			// Noise floor cutoff: anything below -85dB is silence
-			const value = avgDb < -85 ? 0 : Math.max(0, Math.min(1, (avgDb + 85) / 75));
+			if (countR === 0) { sumR = this.freqDataR[Math.min(srcStart, srcBins - 1)]; countR = 1; }
+			const avgDbR = sumR / countR;
+			const valueR = avgDbR < -80 ? 0 : Math.max(0, Math.min(1, (avgDbR + 80) / 55));
 
-			// Right half
-			const rightIdx = Math.floor(half) + i;
-			if (rightIdx < plateCount) output[rightIdx] = value;
+			// Left half: high freq at left edge (index 0), low freq at center (index half-1)
+			const leftIdx = half - 1 - i;
+			if (leftIdx >= 0) output[leftIdx] = valueL;
 
-			// Left half (mirror)
-			const leftIdx = Math.floor(half) - 1 - i;
-			if (leftIdx >= 0) output[leftIdx] = value;
+			// Right half: low freq at center (index half), high freq at right edge
+			const rightIdx = half + i;
+			if (rightIdx < plateCount) output[rightIdx] = valueR;
 		}
 
 		return output;
@@ -160,8 +187,14 @@ export class AudioInput {
 			this.stream.getTracks().forEach((t) => t.stop());
 			this.stream = null;
 		}
-		this.analyser?.disconnect();
-		this.analyser = null;
+		this.analyserL?.disconnect();
+		this.analyserR?.disconnect();
+		this.splitter?.disconnect();
+		this.merger?.disconnect();
+		this.analyserL = null;
+		this.analyserR = null;
+		this.splitter = null;
+		this.merger = null;
 	}
 
 	destroy() {
@@ -171,10 +204,4 @@ export class AudioInput {
 			this.ctx = null;
 		}
 	}
-}
-
-function nearestPow2(n: number): number {
-	let v = 32; // minimum FFT size
-	while (v < n) v *= 2;
-	return Math.min(v, 32768); // max FFT size
 }

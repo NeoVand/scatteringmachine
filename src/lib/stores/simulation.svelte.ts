@@ -1,17 +1,17 @@
-let particleCount = $state(2000);
-let particleRadius = $state(3);
+let particleCount = $state(33900);
+let particleRadius = $state(3.5);
 let isPlaying = $state(true);
-let damping = $state(0.995);
-let plateCount = $state(64);
-let detectorCount = $state(64);
-let gravity = $state(0);
-let plateReach = $state(0.25);
+let damping = $state(1);
+let plateCount = $state(112);
+let detectorCount = $state(112);
+let gravity = $state(130);
+let plateReach = $state(0.95);
 let inputFreqMin = $state(20);
 let inputFreqMax = $state(8000);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
 let platesVisible = $state(true);
-let stiffness = $state(2000);
-let viscosity = $state(10);
+let stiffness = $state(8000);
+let viscosity = $state(75);
 
 let needsBufferRealloc = $state(false);
 
@@ -65,7 +65,7 @@ export function getSimState() {
 			return plateReach;
 		},
 		set plateReach(v: number) {
-			plateReach = Math.max(0.05, Math.min(0.5, v));
+			plateReach = Math.max(0.05, Math.min(0.95, v));
 		},
 		get inputFreqMin() {
 			return inputFreqMin;
