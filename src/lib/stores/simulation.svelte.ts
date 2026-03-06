@@ -28,6 +28,14 @@ export enum PlateStyle {
 	Curve = 1
 }
 
+export enum DemoPattern {
+	Ripple = 0,
+	Sweep = 1,
+	Cascade = 2,
+	Chladni = 3,
+	Breathe = 4
+}
+
 export interface CurvePoint {
 	x: number;
 	y: number;
@@ -47,9 +55,10 @@ let inputFreqMin = $state(20);
 let inputFreqMax = $state(8000);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
 let platesVisible = $state(true);
-let plateStyle = $state<PlateStyle>(PlateStyle.Bars);
+let plateStyle = $state<PlateStyle>(PlateStyle.Curve);
 let stiffness = $state(8000);
 let viscosity = $state(75);
+let demoPattern = $state<DemoPattern>(DemoPattern.Ripple);
 
 let hueSource = $state<ColorSource>(ColorSource.Speed);
 let satSource = $state<ColorSource>(ColorSource.None);
@@ -274,6 +283,12 @@ export function getSimState() {
 		set viscosity(v: number) {
 			viscosity = Math.max(0, Math.min(200, v));
 		},
+		get demoPattern() {
+			return demoPattern;
+		},
+		set demoPattern(v: DemoPattern) {
+			demoPattern = v;
+		},
 		get hueSource() {
 			return hueSource;
 		},
@@ -302,19 +317,19 @@ export function getSimState() {
 			return hueIntensity;
 		},
 		set hueIntensity(v: number) {
-			hueIntensity = Math.max(0.1, Math.min(5.0, v));
+			hueIntensity = Math.max(0.1, Math.min(10.0, v));
 		},
 		get satIntensity() {
 			return satIntensity;
 		},
 		set satIntensity(v: number) {
-			satIntensity = Math.max(0.1, Math.min(5.0, v));
+			satIntensity = Math.max(0.1, Math.min(10.0, v));
 		},
 		get brightIntensity() {
 			return brightIntensity;
 		},
 		set brightIntensity(v: number) {
-			brightIntensity = Math.max(0.1, Math.min(5.0, v));
+			brightIntensity = Math.max(0.1, Math.min(10.0, v));
 		},
 		get hueCurvePoints() {
 			return hueCurvePoints;

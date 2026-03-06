@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { getSimState, ColorSource, SpectrumType, PlateStyle } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, ColorSource, SpectrumType, PlateStyle, DemoPattern } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import CurveEditor from './CurveEditor.svelte';
@@ -29,6 +29,14 @@
 		{ value: SpectrumType.Turbo, label: 'Turbo', gradient: 'linear-gradient(to right, rgb(48,18,59), rgb(70,130,224), rgb(40,208,148), rgb(225,220,55), rgb(209,55,43))' },
 		{ value: SpectrumType.Fire, label: 'Fire', gradient: 'linear-gradient(to right, rgb(0,0,0), rgb(127,0,0), rgb(255,100,0), rgb(255,220,50), rgb(255,255,200))' },
 		{ value: SpectrumType.Sunset, label: 'Sunset', gradient: 'linear-gradient(to right, rgb(44,9,75), rgb(126,25,109), rgb(209,76,78), rgb(242,146,53), rgb(249,214,100))' }
+	];
+
+	const patternLabels: { value: DemoPattern; label: string }[] = [
+		{ value: DemoPattern.Ripple, label: 'Ripple' },
+		{ value: DemoPattern.Sweep, label: 'Sweep' },
+		{ value: DemoPattern.Cascade, label: 'Cascade' },
+		{ value: DemoPattern.Chladni, label: 'Chladni' },
+		{ value: DemoPattern.Breathe, label: 'Breathe' }
 	];
 
 	interface Props {
@@ -308,14 +316,35 @@
 					<div class="row">
 						<span class="label">Style</span>
 						<div class="source-btns">
-							{#each [{ value: PlateStyle.Bars, label: 'Bars' }, { value: PlateStyle.Curve, label: 'Curve' }] as opt}
-								<button
-									class="source-btn"
-									class:active={simState.plateStyle === opt.value}
-									onclick={() => { simState.plateStyle = opt.value; }}
-								>{opt.label}</button>
-							{/each}
+							<button
+								class="source-btn"
+								class:active={simState.plateStyle === PlateStyle.Bars}
+								onclick={() => { simState.plateStyle = PlateStyle.Bars; }}
+							>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="source-icon"><rect x="3" y="12" width="4" height="9" rx="1" /><rect x="10" y="6" width="4" height="15" rx="1" /><rect x="17" y="9" width="4" height="12" rx="1" /></svg>
+								Bars
+							</button>
+							<button
+								class="source-btn"
+								class:active={simState.plateStyle === PlateStyle.Curve}
+								onclick={() => { simState.plateStyle = PlateStyle.Curve; }}
+							>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="source-icon"><path d="M3 20Q7 4 12 12Q17 20 21 4" stroke-linecap="round" /></svg>
+								Curve
+							</button>
 						</div>
+					</div>
+					<div class="row">
+						<span class="label">Pattern</span>
+						<select
+							class="channel-select"
+							value={simState.demoPattern}
+							onchange={(e) => { simState.demoPattern = parseInt(e.currentTarget.value); }}
+						>
+							{#each patternLabels as p (p.value)}
+								<option value={p.value}>{p.label}</option>
+							{/each}
+						</select>
 					</div>
 				</div>
 			{/if}
@@ -512,13 +541,13 @@
 							{/each}
 						</select>
 						<button class="curve-toggle" class:active={showHueCurve} onclick={() => showHueCurve = !showHueCurve} title="Toggle curve editor">
-							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20Q7 4 12 12Q17 20 21 4" /></svg>
 						</button>
 					</div>
 					{#if simState.hueSource !== ColorSource.None}
 						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
 							<input
-								type="range" min="0.1" max="5" step="0.1"
+								type="range" min="0.1" max="10" step="0.1"
 								value={simState.hueIntensity}
 								oninput={(e) => simState.hueIntensity = parseFloat(e.currentTarget.value)}
 								class="slider intensity-slider"
@@ -547,13 +576,13 @@
 							{/each}
 						</select>
 						<button class="curve-toggle" class:active={showSatCurve} onclick={() => showSatCurve = !showSatCurve} title="Toggle curve editor">
-							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20Q7 4 12 12Q17 20 21 4" /></svg>
 						</button>
 					</div>
 					{#if simState.satSource !== ColorSource.None}
 						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
 							<input
-								type="range" min="0.1" max="5" step="0.1"
+								type="range" min="0.1" max="10" step="0.1"
 								value={simState.satIntensity}
 								oninput={(e) => simState.satIntensity = parseFloat(e.currentTarget.value)}
 								class="slider intensity-slider"
@@ -582,13 +611,13 @@
 							{/each}
 						</select>
 						<button class="curve-toggle" class:active={showBrightCurve} onclick={() => showBrightCurve = !showBrightCurve} title="Toggle curve editor">
-							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20Q7 4 12 12Q17 20 21 4" /></svg>
 						</button>
 					</div>
 					{#if simState.brightSource !== ColorSource.None}
 						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
 							<input
-								type="range" min="0.1" max="5" step="0.1"
+								type="range" min="0.1" max="10" step="0.1"
 								value={simState.brightIntensity}
 								oninput={(e) => simState.brightIntensity = parseFloat(e.currentTarget.value)}
 								class="slider intensity-slider"
@@ -896,8 +925,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 4px;
-		padding: 6px 0;
+		gap: 5px;
+		padding: 6px 10px;
 		font-size: 10px;
 		font-weight: 500;
 		color: var(--text-subtle);
@@ -921,9 +950,10 @@
 		border-color: rgba(52, 211, 153, 0.3);
 	}
 	.source-icon {
-		width: 12px;
-		height: 12px;
+		width: 14px;
+		height: 14px;
 	}
+
 
 	/* ─── Toggle Chip (Plates visible, Audio out) ─── */
 	.toggle-chip {

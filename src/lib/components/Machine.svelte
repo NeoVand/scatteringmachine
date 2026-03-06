@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { initWebGPU } from '$lib/gpu/context.js';
 	import { createSimulation, type Simulation } from '$lib/engine/simulation.js';
-	import { getSimState, sampleAllCurves } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, sampleAllCurves, DemoPattern } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import Controls from './Controls.svelte';
@@ -16,6 +16,73 @@
 	const audioOutput = new AudioOutput();
 
 	let wasPlaying = true;
+
+	// ─── Demo pattern generators (when no audio source) ───
+
+	function demoRipple(forces: Float32Array, t: number): void {
+		const center = (forces.length - 1) / 2;
+		for (let i = 0; i < forces.length; i++) {
+			const dist = Math.abs(i - center) / center;
+			const phase = dist * Math.PI * 4;
+			forces[i] = Math.max(0, Math.sin(t * 3.0 + phase)) * 0.8;
+		}
+	}
+
+	function demoSweep(forces: Float32Array, t: number): void {
+		const n = forces.length;
+		const period = 4.0;
+		const raw = (t % period) / period;
+		const pos = raw < 0.5 ? raw * 2 : 2 - raw * 2;
+		const center = pos * (n - 1);
+		const width = n * 0.08;
+		for (let i = 0; i < n; i++) {
+			const d = (i - center) / width;
+			forces[i] = Math.exp(-d * d * 0.5) * 0.9;
+		}
+	}
+
+	function demoCascade(forces: Float32Array, t: number): void {
+		const n = forces.length;
+		const groupCount = 7;
+		const groupSize = n / groupCount;
+		const cyclePeriod = 3.0;
+		for (let i = 0; i < n; i++) {
+			const groupIdx = Math.floor(i / groupSize);
+			const groupDelay = (groupIdx / groupCount) * cyclePeriod;
+			const localT = ((t - groupDelay) % cyclePeriod + cyclePeriod) % cyclePeriod;
+			const activeDuration = 0.6;
+			const phase = localT / activeDuration;
+			if (phase >= 0 && phase < 1) {
+				forces[i] = Math.sin(phase * Math.PI) * 0.85;
+			} else {
+				forces[i] = 0;
+			}
+		}
+	}
+
+	function demoChladni(forces: Float32Array, t: number): void {
+		const n = forces.length;
+		for (let i = 0; i < n; i++) {
+			const x = i / (n - 1);
+			const wave1 = Math.sin(x * Math.PI * 6 - t * 2.0);
+			const wave2 = Math.sin(x * Math.PI * 10 + t * 1.5);
+			const envelope = 0.5 + 0.5 * Math.sin(x * Math.PI * 2 + t * 0.4);
+			const combined = (wave1 + wave2) * 0.5 * envelope;
+			forces[i] = Math.max(0, combined) * 0.85;
+		}
+	}
+
+	function demoBreathe(forces: Float32Array, t: number): void {
+		const n = forces.length;
+		const breath = Math.max(0, Math.sin(t * Math.PI * 2 / 5.0));
+		const pulse = Math.max(0, Math.sin(t * 4.0)) * 0.3;
+		for (let i = 0; i < n; i++) {
+			const x = i / (n - 1);
+			const edgeness = 2.0 * Math.abs(x - 0.5);
+			const shape = edgeness * edgeness;
+			forces[i] = (breath + pulse) * shape * 0.9;
+		}
+	}
 
 	function handleReset() {
 		simState.needsBufferRealloc = true;
@@ -108,14 +175,14 @@
 						: new Float32Array(sim!.plateCount); // zeros when paused
 					sim!.setPlateForces(forces);
 				} else {
-					// Demo: symmetric wave emanating from center
 					const t = performance.now() * 0.001;
 					const forces = new Float32Array(sim!.plateCount);
-					const center = (forces.length - 1) / 2;
-					for (let i = 0; i < forces.length; i++) {
-						const dist = Math.abs(i - center) / center;
-						const phase = dist * Math.PI * 4;
-						forces[i] = Math.max(0, Math.sin(t * 3.0 + phase)) * 0.8;
+					switch (simState.demoPattern) {
+						case DemoPattern.Sweep: demoSweep(forces, t); break;
+						case DemoPattern.Cascade: demoCascade(forces, t); break;
+						case DemoPattern.Chladni: demoChladni(forces, t); break;
+						case DemoPattern.Breathe: demoBreathe(forces, t); break;
+						default: demoRipple(forces, t); break;
 					}
 					sim!.setPlateForces(forces);
 				}
