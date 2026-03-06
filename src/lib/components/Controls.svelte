@@ -1141,18 +1141,25 @@
 	}
 	.channel-select {
 		flex: 1;
-		padding: 3px 6px;
+		padding: 3px 22px 3px 6px;
 		font-size: 10px;
 		color: var(--text-secondary);
 		background: var(--bg-muted);
 		border: 1px solid var(--border-subtle);
 		border-radius: 5px;
 		cursor: pointer;
-		appearance: auto;
+		appearance: none;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 6px center;
 	}
 	.channel-select:focus {
 		outline: none;
 		border-color: var(--accent-purple);
+	}
+	.channel-select option {
+		background: #1a1a22;
+		color: #d4d4dc;
 	}
 
 	/* Curve Toggle Button */
