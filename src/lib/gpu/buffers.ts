@@ -8,6 +8,7 @@ export interface ParticleBuffers {
 	density: GPUBuffer;
 	pressure: GPUBuffer;
 	acceleration: GPUBuffer;
+	curl: GPUBuffer;
 	curveSamples: GPUBuffer;
 	uniforms: GPUBuffer;
 }
@@ -102,6 +103,7 @@ export function createParticleBuffers(
 		density: createEmptyBuffer(device, count * 4, storageUsage),
 		pressure: createEmptyBuffer(device, count * 4, storageUsage),
 		acceleration: createEmptyBuffer(device, count * 4, storageUsage),
+		curl: createEmptyBuffer(device, count * 4, storageUsage),
 		curveSamples: createEmptyBuffer(device, 768, storageUsage), // 3 curves × 64 samples × 4 bytes
 		uniforms: createEmptyBuffer(device, 128, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
 	};

@@ -34,6 +34,8 @@ struct VSOut {
 	@location(4) acceleration: f32,
 	@location(5) normPosX: f32,
 	@location(6) normPosY: f32,
+	@location(7) angle: f32,
+	@location(8) curl: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -43,9 +45,10 @@ struct VSOut {
 @group(0) @binding(4) var<storage, read> pressures: array<f32>;
 @group(0) @binding(5) var<storage, read> accelerations: array<f32>;
 @group(0) @binding(6) var<storage, read> curveSamples: array<f32>;
+@group(0) @binding(7) var<storage, read> curls: array<f32>;
 
 // Get normalized source value for a given source type
-fn getSourceValue(source: u32, speed: f32, density: f32, pressure: f32, accel: f32, posX: f32, posY: f32) -> f32 {
+fn getSourceValue(source: u32, speed: f32, density: f32, pressure: f32, accel: f32, posX: f32, posY: f32, angle: f32, curl: f32) -> f32 {
 	switch (source) {
 		case 0u: { return clamp(speed / 300.0, 0.0, 1.0); } // SOURCE_SPEED
 		case 1u: { // SOURCE_DENSITY
@@ -57,7 +60,10 @@ fn getSourceValue(source: u32, speed: f32, density: f32, pressure: f32, accel: f
 		case 3u: { return clamp(posY / u.boxSize.y, 0.0, 1.0); } // SOURCE_POS_Y
 		case 4u: { return clamp(pressure / (u.stiffness * 2.0), 0.0, 1.0); } // SOURCE_PRESSURE
 		case 5u: { return clamp(accel / 500.0, 0.0, 1.0); } // SOURCE_ACCEL
-		default: { return 0.5; } // SOURCE_NONE — fixed middle value
+		case 6u: { return 0.5; } // SOURCE_NONE — fixed middle value
+		case 7u: { return clamp(angle, 0.0, 1.0); } // SOURCE_ANGLE — heading direction
+		case 8u: { return clamp(curl, 0.0, 1.0); } // SOURCE_CURL — angular velocity
+		default: { return 0.5; }
 	}
 }
 
@@ -92,6 +98,9 @@ fn vs(
 	out.acceleration = accelerations[iid];
 	out.normPosX = center.x;
 	out.normPosY = center.y;
+	let heading = atan2(vel.y, vel.x); // [-π, π]
+	out.angle = (heading + 3.14159265) / (2.0 * 3.14159265); // normalize to [0, 1]
+	out.curl = curls[iid];
 	return out;
 }
 
@@ -103,20 +112,20 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 	let intensity = exp(-dist * dist * 3.0);
 
 	// === HUE: source → intensity → curve → spectrum color ===
-	let hueRaw = getSourceValue(u.hueSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
+	let hueRaw = getSourceValue(u.hueSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY, in.angle, in.curl);
 	let hueScaled = clamp(hueRaw * u.hueIntensity, 0.0, 1.0);
 	let hue = lookupCurve(CURVE_HUE, hueScaled);
 	var color = getColorFromSpectrum(hue, u.colorSpectrum);
 
 	// === SATURATION: source → intensity → curve → desaturate ===
-	let satRaw = getSourceValue(u.satSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
+	let satRaw = getSourceValue(u.satSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY, in.angle, in.curl);
 	let satScaled = clamp(satRaw * u.satIntensity, 0.0, 1.0);
 	let saturation = lookupCurve(CURVE_SAT, satScaled);
 	let lum = dot(color, vec3<f32>(0.299, 0.587, 0.114));
 	color = mix(vec3<f32>(lum), color, saturation);
 
 	// === BRIGHTNESS: source → intensity → curve → scale ===
-	let brightRaw = getSourceValue(u.brightSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
+	let brightRaw = getSourceValue(u.brightSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY, in.angle, in.curl);
 	let brightScaled = clamp(brightRaw * u.brightIntensity, 0.0, 1.0);
 	let bright = lookupCurve(CURVE_BRIGHT, brightScaled);
 	color *= bright;

@@ -13,6 +13,8 @@
 		{ value: ColorSource.PosY, label: 'Pos Y' },
 		{ value: ColorSource.Pressure, label: 'Pressure' },
 		{ value: ColorSource.Acceleration, label: 'Accel' },
+		{ value: ColorSource.Angle, label: 'Angle' },
+		{ value: ColorSource.Curl, label: 'Curl' },
 		{ value: ColorSource.None, label: 'None' }
 	];
 

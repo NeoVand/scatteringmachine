@@ -5,7 +5,9 @@ export enum ColorSource {
 	PosY = 3,
 	Pressure = 4,
 	Acceleration = 5,
-	None = 6
+	None = 6,
+	Angle = 7,
+	Curl = 8
 }
 
 export enum SpectrumType {

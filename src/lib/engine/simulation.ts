@@ -26,6 +26,7 @@ import scatterShader from '$lib/shaders/scatter.wgsl?raw';
 import platesShader from '$lib/shaders/plates.wgsl?raw';
 import detectorsShader from '$lib/shaders/detectors.wgsl?raw';
 import densityShader from '$lib/shaders/density.wgsl?raw';
+import curlShader from '$lib/shaders/curl.wgsl?raw';
 import clearDetectorsShader from '$lib/shaders/clear_detectors.wgsl?raw';
 
 export interface Simulation {
@@ -232,6 +233,20 @@ export function createSimulation(
 		compute: { module: device.createShaderModule({ code: physicsShader }), entryPoint: 'main' }
 	});
 
+	// Curl (angular velocity computation — separate pass to stay within 10 storage buffer limit)
+	const curlBGL = device.createBindGroupLayout({
+		entries: [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+		]
+	});
+	const curlPipeline = device.createComputePipeline({
+		layout: device.createPipelineLayout({ bindGroupLayouts: [curlBGL] }),
+		compute: { module: device.createShaderModule({ code: curlShader }), entryPoint: 'main' }
+	});
+
 	// Render: background (full-screen tri)
 	const bgBGL = device.createBindGroupLayout({
 		entries: [
@@ -260,7 +275,8 @@ export function createSimulation(
 			{ binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
 			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
 			{ binding: 5, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-			{ binding: 6, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
+			{ binding: 6, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+			{ binding: 7, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } }
 		]
 	});
 	const renderPipeline = device.createRenderPipeline({
@@ -424,6 +440,25 @@ export function createSimulation(
 		};
 	}
 
+	function makeCurlBGs() {
+		return {
+			// Physics AtoB reads velA, writes velB → curl reads velA (old) vs velB (new)
+			AtoB: device.createBindGroup({ layout: curlBGL, entries: [
+				{ binding: 0, resource: { buffer: pBuf.uniforms } },
+				{ binding: 1, resource: { buffer: pBuf.velA } },
+				{ binding: 2, resource: { buffer: pBuf.velB } },
+				{ binding: 3, resource: { buffer: pBuf.curl } }
+			]}),
+			// Physics BtoA reads velB, writes velA → curl reads velB (old) vs velA (new)
+			BtoA: device.createBindGroup({ layout: curlBGL, entries: [
+				{ binding: 0, resource: { buffer: pBuf.uniforms } },
+				{ binding: 1, resource: { buffer: pBuf.velB } },
+				{ binding: 2, resource: { buffer: pBuf.velA } },
+				{ binding: 3, resource: { buffer: pBuf.curl } }
+			]})
+		};
+	}
+
 	function makeBgBG() {
 		return device.createBindGroup({ layout: bgBGL, entries: [
 			{ binding: 0, resource: { buffer: pBuf.uniforms } },
@@ -441,7 +476,8 @@ export function createSimulation(
 				{ binding: 3, resource: { buffer: pBuf.density } },
 				{ binding: 4, resource: { buffer: pBuf.pressure } },
 				{ binding: 5, resource: { buffer: pBuf.acceleration } },
-				{ binding: 6, resource: { buffer: pBuf.curveSamples } }
+				{ binding: 6, resource: { buffer: pBuf.curveSamples } },
+				{ binding: 7, resource: { buffer: pBuf.curl } }
 			]}),
 			B: device.createBindGroup({ layout: renderBGL, entries: [
 				{ binding: 0, resource: { buffer: pBuf.uniforms } },
@@ -450,7 +486,8 @@ export function createSimulation(
 				{ binding: 3, resource: { buffer: pBuf.density } },
 				{ binding: 4, resource: { buffer: pBuf.pressure } },
 				{ binding: 5, resource: { buffer: pBuf.acceleration } },
-				{ binding: 6, resource: { buffer: pBuf.curveSamples } }
+				{ binding: 6, resource: { buffer: pBuf.curveSamples } },
+				{ binding: 7, resource: { buffer: pBuf.curl } }
 			]})
 		};
 	}
@@ -464,6 +501,7 @@ export function createSimulation(
 	let clearDetBG = makeClearDetBG();
 	let densityBGs = makeDensityBGs();
 	let physicsBGs = makePhysicsBGs();
+	let curlBGs = makeCurlBGs();
 	let bgBG = makeBgBG();
 	let renderBGs = makeRenderBGs();
 
@@ -567,6 +605,13 @@ export function createSimulation(
 				pass = encoder.beginComputePass();
 				pass.setPipeline(physicsPipeline);
 				pass.setBindGroup(0, readFromA ? physicsBGs.AtoB : physicsBGs.BtoA);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
+				// Curl (angular velocity from heading change)
+				pass = encoder.beginComputePass();
+				pass.setPipeline(curlPipeline);
+				pass.setBindGroup(0, readFromA ? curlBGs.AtoB : curlBGs.BtoA);
 				pass.dispatchWorkgroups(wgP);
 				pass.end();
 
@@ -683,6 +728,7 @@ export function createSimulation(
 		clearDetBG = makeClearDetBG();
 		densityBGs = makeDensityBGs();
 		physicsBGs = makePhysicsBGs();
+		curlBGs = makeCurlBGs();
 		bgBG = makeBgBG();
 		renderBGs = makeRenderBGs();
 	}
