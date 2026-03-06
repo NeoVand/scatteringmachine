@@ -56,6 +56,10 @@ export interface UniformData {
 	satSource: number;
 	brightSource: number;
 	colorSpectrum: number;
+	plateStyle: number;
+	hueIntensity: number;
+	satIntensity: number;
+	brightIntensity: number;
 }
 
 export function computeGridConfig(boxWidth: number, boxHeight: number, radius: number): GridConfig {
@@ -99,7 +103,7 @@ export function createParticleBuffers(
 		pressure: createEmptyBuffer(device, count * 4, storageUsage),
 		acceleration: createEmptyBuffer(device, count * 4, storageUsage),
 		curveSamples: createEmptyBuffer(device, 768, storageUsage), // 3 curves × 64 samples × 4 bytes
-		uniforms: createEmptyBuffer(device, 96, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
+		uniforms: createEmptyBuffer(device, 128, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
 	};
 }
 
@@ -144,7 +148,7 @@ export function createIOBuffers(
 }
 
 export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: UniformData) {
-	const arr = new Float32Array(24);
+	const arr = new Float32Array(32);
 	const u32 = new Uint32Array(arr.buffer);
 	arr[0] = data.boxSize[0];
 	arr[1] = data.boxSize[1];
@@ -167,6 +171,10 @@ export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: Unifor
 	u32[18] = data.satSource;
 	u32[19] = data.brightSource;
 	u32[20] = data.colorSpectrum;
+	u32[21] = data.plateStyle;
+	arr[22] = data.hueIntensity;
+	arr[23] = data.satIntensity;
+	arr[24] = data.brightIntensity;
 	device.queue.writeBuffer(buffer, 0, arr);
 }
 

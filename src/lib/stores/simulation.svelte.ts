@@ -13,7 +13,19 @@ export enum SpectrumType {
 	Chrome = 1,
 	Ocean = 2,
 	Bands = 3,
-	Mono = 4
+	Mono = 4,
+	Inferno = 5,
+	Viridis = 6,
+	Magma = 7,
+	Plasma = 8,
+	Turbo = 9,
+	Fire = 10,
+	Sunset = 11
+}
+
+export enum PlateStyle {
+	Bars = 0,
+	Curve = 1
 }
 
 export interface CurvePoint {
@@ -35,6 +47,7 @@ let inputFreqMin = $state(20);
 let inputFreqMax = $state(8000);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
 let platesVisible = $state(true);
+let plateStyle = $state<PlateStyle>(PlateStyle.Bars);
 let stiffness = $state(8000);
 let viscosity = $state(75);
 
@@ -42,6 +55,9 @@ let hueSource = $state<ColorSource>(ColorSource.Speed);
 let satSource = $state<ColorSource>(ColorSource.None);
 let brightSource = $state<ColorSource>(ColorSource.Speed);
 let colorSpectrum = $state<SpectrumType>(SpectrumType.Rainbow);
+let hueIntensity = $state(1.0);
+let satIntensity = $state(1.0);
+let brightIntensity = $state(1.0);
 let hueCurvePoints = $state<CurvePoint[]>([
 	{ x: 0, y: 0 },
 	{ x: 1, y: 1 }
@@ -240,6 +256,12 @@ export function getSimState() {
 		set platesVisible(v: boolean) {
 			platesVisible = v;
 		},
+		get plateStyle() {
+			return plateStyle;
+		},
+		set plateStyle(v: PlateStyle) {
+			plateStyle = v;
+		},
 		get stiffness() {
 			return stiffness;
 		},
@@ -275,6 +297,24 @@ export function getSimState() {
 		},
 		set colorSpectrum(v: SpectrumType) {
 			colorSpectrum = v;
+		},
+		get hueIntensity() {
+			return hueIntensity;
+		},
+		set hueIntensity(v: number) {
+			hueIntensity = Math.max(0.1, Math.min(5.0, v));
+		},
+		get satIntensity() {
+			return satIntensity;
+		},
+		set satIntensity(v: number) {
+			satIntensity = Math.max(0.1, Math.min(5.0, v));
+		},
+		get brightIntensity() {
+			return brightIntensity;
+		},
+		set brightIntensity(v: number) {
+			brightIntensity = Math.max(0.1, Math.min(5.0, v));
 		},
 		get hueCurvePoints() {
 			return hueCurvePoints;

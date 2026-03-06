@@ -19,6 +19,10 @@ struct Uniforms {
 	satSource: u32,
 	brightSource: u32,
 	colorSpectrum: u32,
+	plateStyle: u32,
+	hueIntensity: f32,
+	satIntensity: f32,
+	brightIntensity: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;

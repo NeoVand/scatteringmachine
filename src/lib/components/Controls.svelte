@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { getSimState, ColorSource, SpectrumType } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, ColorSource, SpectrumType, PlateStyle } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import CurveEditor from './CurveEditor.svelte';
@@ -16,12 +16,19 @@
 		{ value: ColorSource.None, label: 'None' }
 	];
 
-	const spectrumLabels: { value: SpectrumType; label: string }[] = [
-		{ value: SpectrumType.Rainbow, label: 'Rainbow' },
-		{ value: SpectrumType.Chrome, label: 'Chrome' },
-		{ value: SpectrumType.Ocean, label: 'Ocean' },
-		{ value: SpectrumType.Bands, label: 'Bands' },
-		{ value: SpectrumType.Mono, label: 'Mono' }
+	const spectrumLabels: { value: SpectrumType; label: string; gradient: string }[] = [
+		{ value: SpectrumType.Rainbow, label: 'Rainbow', gradient: 'linear-gradient(to right, hsl(0,85%,50%), hsl(60,85%,50%), hsl(120,85%,45%), hsl(180,85%,50%), hsl(240,85%,55%), hsl(300,85%,50%))' },
+		{ value: SpectrumType.Chrome, label: 'Chrome', gradient: 'linear-gradient(to right, rgb(51,102,230), rgb(77,204,230), rgb(242,242,230), rgb(242,153,51), rgb(230,51,51))' },
+		{ value: SpectrumType.Ocean, label: 'Ocean', gradient: 'linear-gradient(to right, rgb(77,107,199), rgb(64,166,179), rgb(89,191,140), rgb(235,199,89), rgb(224,128,115), rgb(166,107,166))' },
+		{ value: SpectrumType.Bands, label: 'Bands', gradient: 'linear-gradient(to right, rgb(230,51,77) 0%, rgb(230,51,77) 16.6%, rgb(242,153,26) 16.7%, rgb(242,153,26) 33.3%, rgb(242,230,51) 33.4%, rgb(242,230,51) 50%, rgb(51,204,102) 50.1%, rgb(51,204,102) 66.6%, rgb(51,153,230) 66.7%, rgb(51,153,230) 83.3%, rgb(153,77,204) 83.4%, rgb(153,77,204) 100%)' },
+		{ value: SpectrumType.Mono, label: 'Mono', gradient: 'linear-gradient(to right, rgb(102,97,92), rgb(179,170,161), rgb(255,242,230))' },
+		{ value: SpectrumType.Inferno, label: 'Inferno', gradient: 'linear-gradient(to right, rgb(0,0,4), rgb(87,16,110), rgb(188,55,84), rgb(249,142,9), rgb(252,255,164))' },
+		{ value: SpectrumType.Viridis, label: 'Viridis', gradient: 'linear-gradient(to right, rgb(68,1,84), rgb(59,82,139), rgb(33,145,140), rgb(94,201,98), rgb(253,231,37))' },
+		{ value: SpectrumType.Magma, label: 'Magma', gradient: 'linear-gradient(to right, rgb(0,0,4), rgb(81,18,124), rgb(183,55,121), rgb(254,159,109), rgb(252,253,191))' },
+		{ value: SpectrumType.Plasma, label: 'Plasma', gradient: 'linear-gradient(to right, rgb(13,8,135), rgb(126,3,168), rgb(204,71,120), rgb(248,149,64), rgb(240,249,33))' },
+		{ value: SpectrumType.Turbo, label: 'Turbo', gradient: 'linear-gradient(to right, rgb(48,18,59), rgb(70,130,224), rgb(40,208,148), rgb(225,220,55), rgb(209,55,43))' },
+		{ value: SpectrumType.Fire, label: 'Fire', gradient: 'linear-gradient(to right, rgb(0,0,0), rgb(127,0,0), rgb(255,100,0), rgb(255,220,50), rgb(255,255,200))' },
+		{ value: SpectrumType.Sunset, label: 'Sunset', gradient: 'linear-gradient(to right, rgb(44,9,75), rgb(126,25,109), rgb(209,76,78), rgb(242,146,53), rgb(249,214,100))' }
 	];
 
 	interface Props {
@@ -45,6 +52,12 @@
 
 	// Accordion state — only one section open at a time
 	let openSection = $state<'fluid' | 'plates' | 'audio-in' | 'audio-out' | 'colors'>('fluid');
+
+	// Color UI state
+	let showHueCurve = $state(false);
+	let showSatCurve = $state(false);
+	let showBrightCurve = $state(false);
+	let spectrumDropdownOpen = $state(false);
 
 	function toggleSection(section: typeof openSection) {
 		openSection = section;
@@ -292,6 +305,18 @@
 						/>
 						<span class="value">{Math.round(simState.plateReach * 100)}%</span>
 					</div>
+					<div class="row">
+						<span class="label">Style</span>
+						<div class="source-btns">
+							{#each [{ value: PlateStyle.Bars, label: 'Bars' }, { value: PlateStyle.Curve, label: 'Curve' }] as opt}
+								<button
+									class="source-btn"
+									class:active={simState.plateStyle === opt.value}
+									onclick={() => { simState.plateStyle = opt.value; }}
+								>{opt.label}</button>
+							{/each}
+						</div>
+					</div>
 				</div>
 			{/if}
 
@@ -455,73 +480,136 @@
 
 			{#if openSection === 'colors'}
 				<div class="section-content" transition:slide={{ duration: 150, easing: cubicOut }}>
-					<!-- Spectrum selector -->
-					<div class="color-subsection-label">Spectrum</div>
-					<div class="spectrum-btns">
-						{#each spectrumLabels as s (s.value)}
-							<button
-								class="spectrum-btn"
-								class:active={simState.colorSpectrum === s.value}
-								onclick={() => simState.colorSpectrum = s.value}
-							>{s.label}</button>
-						{/each}
+					<!-- Spectrum dropdown -->
+					<div class="spectrum-dropdown-wrap">
+						<button class="spectrum-dropdown-btn" onclick={() => spectrumDropdownOpen = !spectrumDropdownOpen}>
+							<div class="spectrum-preview" style:background={spectrumLabels.find(s => s.value === simState.colorSpectrum)?.gradient}></div>
+							<span class="spectrum-name">{spectrumLabels.find(s => s.value === simState.colorSpectrum)?.label}</span>
+							<svg class="spectrum-chevron" class:open={spectrumDropdownOpen} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9" /></svg>
+						</button>
+						{#if spectrumDropdownOpen}
+							<div class="spectrum-dropdown" transition:slide={{ duration: 120, easing: cubicOut }}>
+								{#each spectrumLabels as s (s.value)}
+									<button
+										class="spectrum-option"
+										class:active={simState.colorSpectrum === s.value}
+										onclick={() => { simState.colorSpectrum = s.value; spectrumDropdownOpen = false; }}
+									>
+										<div class="spectrum-option-bar" style:background={s.gradient}></div>
+										<span class="spectrum-option-label">{s.label}</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
-					<!-- Hue -->
-					<div class="color-subsection-label">Hue</div>
-					<div class="row">
-						<span class="label">Source</span>
-						<select class="source-select" value={simState.hueSource} onchange={(e) => simState.hueSource = parseInt(e.currentTarget.value)}>
+					<!-- Hue row -->
+					<div class="color-channel-row">
+						<span class="channel-label">Hue</span>
+						<select class="channel-select" value={simState.hueSource} onchange={(e) => simState.hueSource = parseInt(e.currentTarget.value)}>
 							{#each sourceLabels as s (s.value)}
 								<option value={s.value}>{s.label}</option>
 							{/each}
 						</select>
+						<button class="curve-toggle" class:active={showHueCurve} onclick={() => showHueCurve = !showHueCurve} title="Toggle curve editor">
+							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+						</button>
 					</div>
-					<CurveEditor
-						points={simState.hueCurvePoints}
-						onPointsChange={(pts) => { simState.hueCurvePoints = pts; }}
-						label="Hue Curve"
-						type="hue"
-						spectrum={simState.colorSpectrum}
-					/>
+					{#if simState.hueSource !== ColorSource.None}
+						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
+							<input
+								type="range" min="0.1" max="5" step="0.1"
+								value={simState.hueIntensity}
+								oninput={(e) => simState.hueIntensity = parseFloat(e.currentTarget.value)}
+								class="slider intensity-slider"
+							/>
+							<span class="intensity-value">&times;{simState.hueIntensity.toFixed(1)}</span>
+						</div>
+					{/if}
+					{#if showHueCurve}
+						<div transition:slide={{ duration: 120, easing: cubicOut }}>
+							<CurveEditor
+								points={simState.hueCurvePoints}
+								onPointsChange={(pts) => { simState.hueCurvePoints = pts; }}
+								label="Hue Curve"
+								type="hue"
+								spectrum={simState.colorSpectrum}
+							/>
+						</div>
+					{/if}
 
-					<!-- Saturation -->
-					<div class="color-subsection-label">Saturation</div>
-					<div class="row">
-						<span class="label">Source</span>
-						<select class="source-select" value={simState.satSource} onchange={(e) => simState.satSource = parseInt(e.currentTarget.value)}>
+					<!-- Saturation row -->
+					<div class="color-channel-row">
+						<span class="channel-label">Sat</span>
+						<select class="channel-select" value={simState.satSource} onchange={(e) => simState.satSource = parseInt(e.currentTarget.value)}>
 							{#each sourceLabels as s (s.value)}
 								<option value={s.value}>{s.label}</option>
 							{/each}
 						</select>
+						<button class="curve-toggle" class:active={showSatCurve} onclick={() => showSatCurve = !showSatCurve} title="Toggle curve editor">
+							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+						</button>
 					</div>
-					<CurveEditor
-						points={simState.satCurvePoints}
-						onPointsChange={(pts) => { simState.satCurvePoints = pts; }}
-						label="Saturation Curve"
-						type="saturation"
-						spectrum={simState.colorSpectrum}
-					/>
+					{#if simState.satSource !== ColorSource.None}
+						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
+							<input
+								type="range" min="0.1" max="5" step="0.1"
+								value={simState.satIntensity}
+								oninput={(e) => simState.satIntensity = parseFloat(e.currentTarget.value)}
+								class="slider intensity-slider"
+							/>
+							<span class="intensity-value">&times;{simState.satIntensity.toFixed(1)}</span>
+						</div>
+					{/if}
+					{#if showSatCurve}
+						<div transition:slide={{ duration: 120, easing: cubicOut }}>
+							<CurveEditor
+								points={simState.satCurvePoints}
+								onPointsChange={(pts) => { simState.satCurvePoints = pts; }}
+								label="Saturation Curve"
+								type="saturation"
+								spectrum={simState.colorSpectrum}
+							/>
+						</div>
+					{/if}
 
-					<!-- Brightness -->
-					<div class="color-subsection-label">Brightness</div>
-					<div class="row">
-						<span class="label">Source</span>
-						<select class="source-select" value={simState.brightSource} onchange={(e) => simState.brightSource = parseInt(e.currentTarget.value)}>
+					<!-- Brightness row -->
+					<div class="color-channel-row">
+						<span class="channel-label">Bright</span>
+						<select class="channel-select" value={simState.brightSource} onchange={(e) => simState.brightSource = parseInt(e.currentTarget.value)}>
 							{#each sourceLabels as s (s.value)}
 								<option value={s.value}>{s.label}</option>
 							{/each}
 						</select>
+						<button class="curve-toggle" class:active={showBrightCurve} onclick={() => showBrightCurve = !showBrightCurve} title="Toggle curve editor">
+							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12C4 12 6 4 8 4s4 8 6 8" stroke-linecap="round" /></svg>
+						</button>
 					</div>
-					<CurveEditor
-						points={simState.brightCurvePoints}
-						onPointsChange={(pts) => { simState.brightCurvePoints = pts; }}
-						label="Brightness Curve"
-						type="brightness"
-						spectrum={simState.colorSpectrum}
-					/>
+					{#if simState.brightSource !== ColorSource.None}
+						<div class="intensity-row" transition:slide={{ duration: 100, easing: cubicOut }}>
+							<input
+								type="range" min="0.1" max="5" step="0.1"
+								value={simState.brightIntensity}
+								oninput={(e) => simState.brightIntensity = parseFloat(e.currentTarget.value)}
+								class="slider intensity-slider"
+							/>
+							<span class="intensity-value">&times;{simState.brightIntensity.toFixed(1)}</span>
+						</div>
+					{/if}
+					{#if showBrightCurve}
+						<div transition:slide={{ duration: 120, easing: cubicOut }}>
+							<CurveEditor
+								points={simState.brightCurvePoints}
+								onPointsChange={(pts) => { simState.brightCurvePoints = pts; }}
+								label="Brightness Curve"
+								type="brightness"
+								spectrum={simState.colorSpectrum}
+							/>
+						</div>
+					{/if}
 				</div>
 			{/if}
+
 		</div>
 	</div>
 
@@ -891,53 +979,114 @@
 	}
 
 	/* ─── Color Controls ─── */
-	.color-subsection-label {
-		font-size: 9px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-subtle);
-		margin-top: 8px;
-		margin-bottom: 2px;
-	}
-	.color-subsection-label:first-child {
-		margin-top: 0;
-	}
 
-	.spectrum-btns {
-		display: flex;
-		gap: 3px;
-		margin-bottom: 4px;
+	/* Spectrum Dropdown */
+	.spectrum-dropdown-wrap {
+		position: relative;
+		margin-bottom: 6px;
 	}
-	.spectrum-btn {
-		flex: 1;
-		padding: 5px 0;
-		font-size: 9px;
-		font-weight: 500;
-		color: var(--text-subtle);
+	.spectrum-dropdown-btn {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		padding: 5px 8px;
 		background: var(--bg-muted);
 		border: 1px solid var(--border-subtle);
-		border-radius: 5px;
+		border-radius: 6px;
 		cursor: pointer;
-		transition:
-			color var(--transition-fast),
-			background var(--transition-fast),
-			border-color var(--transition-fast);
+		transition: border-color var(--transition-fast);
 	}
-	.spectrum-btn:hover {
-		color: var(--text-secondary);
-		background: var(--bg-hover);
+	.spectrum-dropdown-btn:hover {
 		border-color: var(--border-muted);
 	}
-	.spectrum-btn.active {
-		color: var(--accent-purple);
-		background: var(--accent-purple-muted);
-		border-color: rgba(167, 139, 250, 0.3);
+	.spectrum-preview {
+		width: 48px;
+		height: 14px;
+		border-radius: 3px;
+		flex-shrink: 0;
+	}
+	.spectrum-name {
+		flex: 1;
+		font-size: 10px;
+		font-weight: 500;
+		color: var(--text-secondary);
+		text-align: left;
+	}
+	.spectrum-chevron {
+		width: 12px;
+		height: 12px;
+		color: var(--text-subtle);
+		transition: transform 0.15s ease;
+		transform: rotate(-90deg);
+		flex-shrink: 0;
+	}
+	.spectrum-chevron.open {
+		transform: rotate(0deg);
+	}
+	.spectrum-dropdown {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		max-height: 160px;
+		overflow-y: auto;
+		padding: 4px;
+		margin-top: 4px;
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-subtle);
+		border-radius: 6px;
+		backdrop-filter: blur(10px);
+	}
+	.spectrum-option {
+		position: relative;
+		display: flex;
+		align-items: center;
+		height: 20px;
+		border-radius: 4px;
+		border: 1.5px solid transparent;
+		background: none;
+		cursor: pointer;
+		overflow: hidden;
+		transition: border-color var(--transition-fast);
+	}
+	.spectrum-option:hover {
+		border-color: var(--border-muted);
+	}
+	.spectrum-option.active {
+		border-color: rgb(68, 170, 255);
+	}
+	.spectrum-option-bar {
+		position: absolute;
+		inset: 0;
+		border-radius: 3px;
+	}
+	.spectrum-option-label {
+		position: relative;
+		z-index: 1;
+		font-size: 9px;
+		font-weight: 600;
+		color: #fff;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+		padding: 0 6px;
 	}
 
-	.source-select {
+	/* H/S/B Channel Rows */
+	.color-channel-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 0;
+	}
+	.channel-label {
+		width: 36px;
+		flex-shrink: 0;
+		font-size: 10px;
+		font-weight: 500;
+		color: var(--text-muted);
+	}
+	.channel-select {
 		flex: 1;
-		padding: 4px 6px;
+		padding: 3px 6px;
 		font-size: 10px;
 		color: var(--text-secondary);
 		background: var(--bg-muted);
@@ -946,8 +1095,60 @@
 		cursor: pointer;
 		appearance: auto;
 	}
-	.source-select:focus {
+	.channel-select:focus {
 		outline: none;
 		border-color: var(--accent-purple);
+	}
+
+	/* Curve Toggle Button */
+	.curve-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		flex-shrink: 0;
+		background: var(--bg-muted);
+		border: 1px solid var(--border-subtle);
+		border-radius: 5px;
+		color: var(--text-subtle);
+		cursor: pointer;
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+	.curve-toggle:hover {
+		color: var(--text-secondary);
+		border-color: var(--border-muted);
+	}
+	.curve-toggle.active {
+		color: var(--accent-purple);
+		background: var(--accent-purple-muted);
+		border-color: rgba(167, 139, 250, 0.3);
+	}
+	.curve-toggle svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	/* Intensity Row */
+	.intensity-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 2px 0 2px 36px;
+	}
+	.intensity-slider {
+		flex: 1;
+	}
+	.intensity-value {
+		flex-shrink: 0;
+		min-width: 28px;
+		text-align: right;
+		font-family: ui-monospace, 'SF Mono', monospace;
+		font-size: 9px;
+		color: var(--text-subtle);
 	}
 </style>

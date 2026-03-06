@@ -69,9 +69,11 @@
 				sim!.setPlateReach(simState.plateReach);
 				sim!.setDetectorsActive(audioOutput.isActive);
 				sim!.setPlatesVisible(simState.platesVisible);
+				sim!.setPlateStyle(simState.plateStyle);
 				sim!.setStiffness(simState.stiffness);
 				sim!.setViscosity(simState.viscosity);
 				sim!.setColorConfig(simState.hueSource, simState.satSource, simState.brightSource, simState.colorSpectrum);
+				sim!.setIntensity(simState.hueIntensity, simState.satIntensity, simState.brightIntensity);
 
 				if (simState.curvesDirty) {
 					const samples = sampleAllCurves(simState.hueCurvePoints, simState.satCurvePoints, simState.brightCurvePoints);

@@ -19,6 +19,10 @@ struct Uniforms {
 	satSource: u32,
 	brightSource: u32,
 	colorSpectrum: u32,
+	plateStyle: u32,
+	hueIntensity: f32,
+	satIntensity: f32,
+	brightIntensity: f32,
 };
 
 struct VSOut {
@@ -62,75 +66,107 @@ fn spectrumColor(t: f32) -> vec3<f32> {
 	return mix(c4, c5, s - 4.0);
 }
 
+// Catmull-Rom interpolation for smooth curve mode
+fn catmullRom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+	let t2 = t * t;
+	let t3 = t2 * t;
+	return 0.5 * (
+		(2.0 * p1) +
+		(-p0 + p2) * t +
+		(2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
+		(-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+	);
+}
+
+// Get plate force by index with clamping
+fn getForce(idx: i32) -> f32 {
+	let ci = clamp(idx, 0, i32(u.plateCount) - 1);
+	return abs(plateForces[ci]);
+}
+
 @fragment
 fn fs(in: VSOut) -> @location(0) vec4<f32> {
 	let worldPos = in.uv * u.boxSize;
-	let maxExtension = u.plateDepth * 0.85;
+	let maxExtension = u.plateDepth * 0.95;
 
 	var color = vec3<f32>(0.0);
 
 	// === PLATES (bottom of screen = large worldPos.y) ===
 	if (u.platesVisible > 0u) {
 		let plateWidth = u.boxSize.x / f32(u.plateCount);
-		let plateIdx = min(u32(worldPos.x / plateWidth), u.plateCount - 1u);
-		let force = abs(plateForces[plateIdx]);
-		let extension = force * maxExtension;
-		let plateTop = u.boxSize.y - extension;
 
-		// Position within this plate cell
-		let plateFrac = fract(worldPos.x / plateWidth);
-		// Inset: bars are 70% of cell width, centered
-		let barInset = 0.15;
-		let inBar = step(barInset, plateFrac) * step(barInset, 1.0 - plateFrac);
-		// Smooth edges within the bar
-		let barEdge = smoothstep(barInset, barInset + 0.05, plateFrac)
-		            * smoothstep(barInset, barInset + 0.05, 1.0 - plateFrac);
+		if (u.plateStyle == 0u) {
+			// ===== BAR MODE =====
+			let plateIdx = min(u32(worldPos.x / plateWidth), u.plateCount - 1u);
+			let force = abs(plateForces[plateIdx]);
+			let extension = force * maxExtension;
+			let plateTop = u.boxSize.y - extension;
 
-		// Glow aura around the tip (extends beyond the bar)
-		if (force > 0.001) {
-			let tipY = plateTop;
-			let distToTip = max(0.0, tipY - worldPos.y); // above tip
-			let distFromBottom = max(0.0, worldPos.y - tipY); // below tip (inside bar region)
-			let lateralDist = abs(plateFrac - 0.5) * plateWidth;
-			let glowRadius = max(plateWidth * 0.8, 8.0);
+			// Hairline separator between bars
+			let plateFrac = fract(worldPos.x / plateWidth);
+			let separatorWidth = 1.5 / plateWidth;
+			let separator = smoothstep(0.0, separatorWidth, plateFrac)
+			              * smoothstep(0.0, separatorWidth, 1.0 - plateFrac);
 
-			// Vertical glow above the tip
-			if (distToTip < glowRadius * 2.0) {
-				let glowFalloff = exp(-(distToTip * distToTip + lateralDist * lateralDist * 0.5) / (glowRadius * glowRadius));
-				let glowColor = spectrumColor(force) * force * 0.4 * glowFalloff;
-				color += glowColor;
+			// The solid bar (full width, no inset)
+			if (worldPos.y > plateTop) {
+				let barT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
+				let barColor = spectrumColor(force);
+				let brightness = mix(0.12, 0.7, barT * barT);
+				let separatorDim = mix(0.3, 1.0, separator);
+
+				// Subtle tip line (3px)
+				let tipDist = worldPos.y - plateTop;
+				let tipLine = smoothstep(3.0, 0.0, tipDist) * 0.15;
+
+				let finalBar = barColor * brightness * separatorDim
+				             + vec3<f32>(1.0) * tipLine * separatorDim;
+				color = max(color, finalBar);
 			}
-		}
 
-		// The solid bar
-		if (worldPos.y > plateTop && inBar > 0.0) {
-			// barT: 0 at bottom wall, 1 at tip
-			let barT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
+			// Subtle base strip
+			if (worldPos.y > u.boxSize.y - 3.0) {
+				let baseColor = vec3<f32>(0.06, 0.07, 0.1) * separator;
+				color = max(color, baseColor);
+			}
+		} else {
+			// ===== CURVE MODE =====
+			// Compute smooth curve height at this x using Catmull-Rom
+			let exactPlateF = worldPos.x / plateWidth;
+			let idx = i32(floor(exactPlateF));
+			let t = fract(exactPlateF);
 
-			// Base color from spectrum based on force intensity
-			let barColor = spectrumColor(force);
+			let f0 = getForce(idx - 1);
+			let f1 = getForce(idx);
+			let f2 = getForce(idx + 1);
+			let f3 = getForce(idx + 2);
 
-			// Darken toward the base, brighten toward the tip
-			let brightness = mix(0.15, 0.9, barT * barT);
+			let interpForce = clamp(catmullRom(f0, f1, f2, f3, t), 0.0, 1.0);
+			let extension = interpForce * maxExtension;
+			let curveTop = u.boxSize.y - extension;
 
-			// Inner highlight: lighter stripe down the center
-			let centerHighlight = exp(-pow((plateFrac - 0.5) * 6.0, 2.0)) * 0.3;
+			// Fill below the curve
+			if (worldPos.y > curveTop) {
+				let fillT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
+				let fillColor = spectrumColor(interpForce);
+				let brightness = mix(0.1, 0.6, fillT * fillT);
 
-			// Tip cap: bright highlight at the very tip
-			let tipDist = abs(worldPos.y - plateTop);
-			let tipHighlight = exp(-tipDist * 0.15) * 0.5 * force;
+				let finalFill = fillColor * brightness;
+				color = max(color, finalFill);
+			}
 
-			let finalBar = barColor * brightness * barEdge
-			             + barColor * centerHighlight * barEdge
-			             + vec3<f32>(1.0) * tipHighlight * barEdge;
+			// Bright curve line at the surface (2px)
+			let distToCurve = abs(worldPos.y - curveTop);
+			if (distToCurve < 3.0 && interpForce > 0.005) {
+				let lineAlpha = smoothstep(3.0, 0.5, distToCurve);
+				let lineColor = spectrumColor(interpForce) * (0.6 + 0.4 * interpForce);
+				color = max(color, lineColor * lineAlpha);
+			}
 
-			color = max(color, finalBar);
-		}
-
-		// Subtle base strip at very bottom
-		if (worldPos.y > u.boxSize.y - 3.0) {
-			let baseColor = vec3<f32>(0.06, 0.07, 0.1) * barEdge;
-			color = max(color, baseColor);
+			// Base strip
+			if (worldPos.y > u.boxSize.y - 3.0) {
+				color = max(color, vec3<f32>(0.06, 0.07, 0.1));
+			}
 		}
 	}
 

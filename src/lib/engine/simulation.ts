@@ -38,12 +38,14 @@ export interface Simulation {
 	setPlateReach(v: number): void;
 	setDetectorsActive(v: boolean): void;
 	setPlatesVisible(v: boolean): void;
+	setPlateStyle(v: number): void;
 	setStiffness(v: number): void;
 	setViscosity(v: number): void;
 	setPlaying(v: boolean): void;
 	setPlateForces(forces: Float32Array): void;
 	getDetectorReadings(): Float32Array | null;
 	setColorConfig(hue: number, sat: number, bright: number, spectrum: number): void;
+	setIntensity(hue: number, sat: number, bright: number): void;
 	setCurveSamples(samples: Float32Array): void;
 	plateCount: number;
 	detectorCount: number;
@@ -74,6 +76,10 @@ export function createSimulation(
 	let satSource = 6; // SOURCE_NONE
 	let brightSource = 0; // SOURCE_SPEED
 	let colorSpectrum = 0; // SPECTRUM_RAINBOW
+	let plateStyle = 0;
+	let hueIntensity = 1.0;
+	let satIntensity = 1.0;
+	let brightIntensity = 1.0;
 	let playing = true;
 	let readFromA = true;
 	let destroyed = false;
@@ -485,16 +491,7 @@ export function createSimulation(
 				pass.end();
 			}
 
-			// Plate forces applied once per frame (on the current read buffer)
-			{
-				let pass = encoder.beginComputePass();
-				pass.setPipeline(platesPipeline);
-				pass.setBindGroup(0, readFromA ? platesBGs.A : platesBGs.B);
-				pass.dispatchWorkgroups(wgP);
-				pass.end();
-			}
-
-			// Sub-stepped grid build + physics
+			// Sub-stepped grid build + physics + plate collision
 			for (let step = 0; step < subSteps; step++) {
 				writeUniforms(device, pBuf.uniforms, {
 					boxSize: [boxWidth, boxHeight],
@@ -516,7 +513,11 @@ export function createSimulation(
 					hueSource,
 					satSource,
 					brightSource,
-					colorSpectrum
+					colorSpectrum,
+					plateStyle,
+					hueIntensity,
+					satIntensity,
+					brightIntensity
 				});
 				writeGridInfo(device, gBuf.gridInfo, grid.gridW, grid.gridH, grid.cellSize, count);
 				writePrefixInfo(device, gBuf.prefixInfo, grid.totalCells);
@@ -569,6 +570,14 @@ export function createSimulation(
 				pass.dispatchWorkgroups(wgP);
 				pass.end();
 
+				// Plate collision on the physics OUTPUT buffer
+				// Physics wrote: readFromA ? AtoB(output=B) : BtoA(output=A)
+				pass = encoder.beginComputePass();
+				pass.setPipeline(platesPipeline);
+				pass.setBindGroup(0, readFromA ? platesBGs.B : platesBGs.A);
+				pass.dispatchWorkgroups(wgP);
+				pass.end();
+
 				// Flip ping-pong for next sub-step
 				readFromA = !readFromA;
 			}
@@ -618,7 +627,11 @@ export function createSimulation(
 				hueSource,
 				satSource,
 				brightSource,
-				colorSpectrum
+				colorSpectrum,
+				plateStyle,
+				hueIntensity,
+				satIntensity,
+				brightIntensity
 			});
 		}
 
@@ -712,6 +725,7 @@ export function createSimulation(
 		setPlateReach(v: number) { plateDepthFraction = v; },
 		setDetectorsActive(v: boolean) { detectorsActive = v; },
 		setPlatesVisible(v: boolean) { platesVisible = v; },
+		setPlateStyle(v: number) { plateStyle = v; },
 		setStiffness(v: number) { stiffness = v; },
 		setViscosity(v: number) { viscosity = v; },
 		setPlaying(v: boolean) { playing = v; },
@@ -724,6 +738,11 @@ export function createSimulation(
 			satSource = sat;
 			brightSource = bright;
 			colorSpectrum = spectrum;
+		},
+		setIntensity(hue: number, sat: number, bright: number) {
+			hueIntensity = hue;
+			satIntensity = sat;
+			brightIntensity = bright;
 		},
 		setCurveSamples(samples: Float32Array) {
 			updateCurveSamples(device, pBuf.curveSamples, samples);

@@ -19,6 +19,10 @@ struct Uniforms {
 	satSource: u32,
 	brightSource: u32,
 	colorSpectrum: u32,
+	plateStyle: u32,
+	hueIntensity: f32,
+	satIntensity: f32,
+	brightIntensity: f32,
 };
 
 struct VSOut {
@@ -98,20 +102,23 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 	// Soft radial falloff
 	let intensity = exp(-dist * dist * 3.0);
 
-	// === HUE: source → curve → spectrum color ===
+	// === HUE: source → intensity → curve → spectrum color ===
 	let hueRaw = getSourceValue(u.hueSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
-	let hue = lookupCurve(CURVE_HUE, hueRaw);
+	let hueScaled = clamp(hueRaw * u.hueIntensity, 0.0, 1.0);
+	let hue = lookupCurve(CURVE_HUE, hueScaled);
 	var color = getColorFromSpectrum(hue, u.colorSpectrum);
 
-	// === SATURATION: source → curve → desaturate ===
+	// === SATURATION: source → intensity → curve → desaturate ===
 	let satRaw = getSourceValue(u.satSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
-	let saturation = lookupCurve(CURVE_SAT, satRaw);
+	let satScaled = clamp(satRaw * u.satIntensity, 0.0, 1.0);
+	let saturation = lookupCurve(CURVE_SAT, satScaled);
 	let lum = dot(color, vec3<f32>(0.299, 0.587, 0.114));
 	color = mix(vec3<f32>(lum), color, saturation);
 
-	// === BRIGHTNESS: source → curve → scale ===
+	// === BRIGHTNESS: source → intensity → curve → scale ===
 	let brightRaw = getSourceValue(u.brightSource, in.speed, in.density, in.pressure, in.acceleration, in.normPosX, in.normPosY);
-	let bright = lookupCurve(CURVE_BRIGHT, brightRaw);
+	let brightScaled = clamp(brightRaw * u.brightIntensity, 0.0, 1.0);
+	let bright = lookupCurve(CURVE_BRIGHT, brightScaled);
 	color *= bright;
 
 	// Per-particle contribution with additive blending

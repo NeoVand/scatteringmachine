@@ -16,6 +16,13 @@ const SPECTRUM_CHROME: u32 = 1u;
 const SPECTRUM_OCEAN: u32 = 2u;
 const SPECTRUM_BANDS: u32 = 3u;
 const SPECTRUM_MONO: u32 = 4u;
+const SPECTRUM_INFERNO: u32 = 5u;
+const SPECTRUM_VIRIDIS: u32 = 6u;
+const SPECTRUM_MAGMA: u32 = 7u;
+const SPECTRUM_PLASMA: u32 = 8u;
+const SPECTRUM_TURBO: u32 = 9u;
+const SPECTRUM_FIRE: u32 = 10u;
+const SPECTRUM_SUNSET: u32 = 11u;
 
 // Curve indices
 const CURVE_HUE: u32 = 0u;
@@ -101,6 +108,83 @@ fn getColorFromSpectrum(t: f32, spectrum: u32) -> vec3<f32> {
 		case SPECTRUM_MONO: {
 			let brightness = 0.4 + tt * 0.6;
 			return vec3<f32>(brightness, brightness * 0.95, brightness * 0.9);
+		}
+		case SPECTRUM_INFERNO: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.0, 0.0, 0.016), vec3<f32>(0.341, 0.063, 0.431), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.341, 0.063, 0.431), vec3<f32>(0.737, 0.216, 0.329), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.737, 0.216, 0.329), vec3<f32>(0.976, 0.557, 0.035), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.976, 0.557, 0.035), vec3<f32>(0.988, 1.0, 0.643), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_VIRIDIS: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.267, 0.004, 0.329), vec3<f32>(0.231, 0.322, 0.545), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.231, 0.322, 0.545), vec3<f32>(0.129, 0.569, 0.549), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.129, 0.569, 0.549), vec3<f32>(0.369, 0.788, 0.384), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.369, 0.788, 0.384), vec3<f32>(0.992, 0.906, 0.145), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_MAGMA: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.0, 0.0, 0.016), vec3<f32>(0.318, 0.071, 0.486), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.318, 0.071, 0.486), vec3<f32>(0.718, 0.216, 0.475), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.718, 0.216, 0.475), vec3<f32>(0.996, 0.624, 0.427), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.996, 0.624, 0.427), vec3<f32>(0.988, 0.992, 0.749), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_PLASMA: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.051, 0.031, 0.529), vec3<f32>(0.494, 0.012, 0.659), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.494, 0.012, 0.659), vec3<f32>(0.8, 0.278, 0.471), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.8, 0.278, 0.471), vec3<f32>(0.973, 0.584, 0.251), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.973, 0.584, 0.251), vec3<f32>(0.941, 0.976, 0.129), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_TURBO: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.188, 0.071, 0.231), vec3<f32>(0.275, 0.51, 0.878), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.275, 0.51, 0.878), vec3<f32>(0.157, 0.816, 0.58), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.157, 0.816, 0.58), vec3<f32>(0.882, 0.863, 0.216), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.882, 0.863, 0.216), vec3<f32>(0.82, 0.216, 0.169), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_FIRE: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(0.498, 0.0, 0.0), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.498, 0.0, 0.0), vec3<f32>(1.0, 0.392, 0.0), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(1.0, 0.392, 0.0), vec3<f32>(1.0, 0.863, 0.196), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(1.0, 0.863, 0.196), vec3<f32>(1.0, 1.0, 0.784), (tt - 0.75) * 4.0);
+			}
+		}
+		case SPECTRUM_SUNSET: {
+			if (tt < 0.25) {
+				return mix(vec3<f32>(0.173, 0.035, 0.294), vec3<f32>(0.494, 0.098, 0.427), tt * 4.0);
+			} else if (tt < 0.5) {
+				return mix(vec3<f32>(0.494, 0.098, 0.427), vec3<f32>(0.82, 0.298, 0.306), (tt - 0.25) * 4.0);
+			} else if (tt < 0.75) {
+				return mix(vec3<f32>(0.82, 0.298, 0.306), vec3<f32>(0.949, 0.573, 0.208), (tt - 0.5) * 4.0);
+			} else {
+				return mix(vec3<f32>(0.949, 0.573, 0.208), vec3<f32>(0.976, 0.839, 0.392), (tt - 0.75) * 4.0);
+			}
 		}
 		default: {
 			return vec3<f32>(1.0);
