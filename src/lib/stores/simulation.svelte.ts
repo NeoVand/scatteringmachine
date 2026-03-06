@@ -36,6 +36,11 @@ export enum DemoPattern {
 	Breathe = 4
 }
 
+export enum InputMode {
+	Frequency = 0,
+	TimeDomain = 1
+}
+
 export interface CurvePoint {
 	x: number;
 	y: number;
@@ -51,6 +56,7 @@ let plateCount = $state(112);
 let detectorCount = $state(112);
 let gravity = $state(130);
 let plateReach = $state(0.95);
+let inputMode = $state<InputMode>(InputMode.Frequency);
 let inputFreqMin = $state(20);
 let inputFreqMax = $state(8000);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
@@ -240,6 +246,12 @@ export function getSimState() {
 		},
 		set plateReach(v: number) {
 			plateReach = Math.max(0.05, Math.min(0.95, v));
+		},
+		get inputMode() {
+			return inputMode;
+		},
+		set inputMode(v: InputMode) {
+			inputMode = v;
 		},
 		get inputFreqMin() {
 			return inputFreqMin;

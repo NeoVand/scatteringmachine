@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { getSimState, ColorSource, SpectrumType, PlateStyle, DemoPattern } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, ColorSource, SpectrumType, PlateStyle, DemoPattern, InputMode } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import CurveEditor from './CurveEditor.svelte';
@@ -379,7 +379,7 @@
 							onclick={() => setAudioSource('mic')}
 						>
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="source-icon">
-								<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+								<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" />
 							</svg>
 							Mic
 						</button>
@@ -396,25 +396,48 @@
 					{#if audioSource !== 'none'}
 						<div class="sub-section" transition:slide={{ duration: 120, easing: cubicOut }}>
 							<div class="row">
-								<span class="label">Low freq</span>
-								<input
-									type="range" min="0" max="2000" step="10"
-									value={simState.inputFreqMin}
-									oninput={(e) => { simState.inputFreqMin = parseInt(e.currentTarget.value); if (simState.inputFreqMin >= simState.inputFreqMax) simState.inputFreqMax = simState.inputFreqMin + 100; }}
-									class="slider"
-								/>
-								<span class="value">{simState.inputFreqMin}Hz</span>
+								<span class="label">Mode</span>
+								<div class="source-btns">
+									<button
+										class="source-btn"
+										class:active={simState.inputMode === InputMode.Frequency}
+										onclick={() => { simState.inputMode = InputMode.Frequency; }}
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="source-icon"><rect x="3" y="12" width="3" height="9" rx="1" /><rect x="7" y="6" width="3" height="15" rx="1" /><rect x="11" y="9" width="3" height="12" rx="1" /><rect x="15" y="4" width="3" height="17" rx="1" /><rect x="19" y="10" width="3" height="11" rx="1" /></svg>
+										Freq
+									</button>
+									<button
+										class="source-btn"
+										class:active={simState.inputMode === InputMode.TimeDomain}
+										onclick={() => { simState.inputMode = InputMode.TimeDomain; }}
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="source-icon"><path d="M3 12Q6 4 9 12Q12 20 15 12Q18 4 21 12" stroke-linecap="round" /></svg>
+										Wave
+									</button>
+								</div>
 							</div>
-							<div class="row">
-								<span class="label">High freq</span>
-								<input
-									type="range" min="500" max="22000" step="100"
-									value={simState.inputFreqMax}
-									oninput={(e) => { simState.inputFreqMax = parseInt(e.currentTarget.value); if (simState.inputFreqMax <= simState.inputFreqMin) simState.inputFreqMin = simState.inputFreqMax - 100; }}
-									class="slider"
-								/>
-								<span class="value">{simState.inputFreqMax}Hz</span>
-							</div>
+							{#if simState.inputMode === InputMode.Frequency}
+								<div class="row">
+									<span class="label">Low freq</span>
+									<input
+										type="range" min="0" max="2000" step="10"
+										value={simState.inputFreqMin}
+										oninput={(e) => { simState.inputFreqMin = parseInt(e.currentTarget.value); if (simState.inputFreqMin >= simState.inputFreqMax) simState.inputFreqMax = simState.inputFreqMin + 100; }}
+										class="slider"
+									/>
+									<span class="value">{simState.inputFreqMin}Hz</span>
+								</div>
+								<div class="row">
+									<span class="label">High freq</span>
+									<input
+										type="range" min="500" max="22000" step="100"
+										value={simState.inputFreqMax}
+										oninput={(e) => { simState.inputFreqMax = parseInt(e.currentTarget.value); if (simState.inputFreqMax <= simState.inputFreqMin) simState.inputFreqMin = simState.inputFreqMax - 100; }}
+										class="slider"
+									/>
+									<span class="value">{simState.inputFreqMax}Hz</span>
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>

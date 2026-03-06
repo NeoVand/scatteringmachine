@@ -8,6 +8,8 @@ export class AudioInput {
 	private stream: MediaStream | null = null;
 	private freqDataL: Float32Array = new Float32Array(0);
 	private freqDataR: Float32Array = new Float32Array(0);
+	private timeDataL: Float32Array = new Float32Array(0);
+	private timeDataR: Float32Array = new Float32Array(0);
 	private sourceChannels: number = 2;
 
 	/** True when audio context is running (not suspended/closed) */
@@ -47,6 +49,8 @@ export class AudioInput {
 
 		this.freqDataL = new Float32Array(this.analyserL.frequencyBinCount);
 		this.freqDataR = new Float32Array(this.analyserR.frequencyBinCount);
+		this.timeDataL = new Float32Array(this.analyserL.fftSize);
+		this.timeDataR = new Float32Array(this.analyserR.fftSize);
 	}
 
 	/** Connect source through splitter → per-channel analysers → merger → destination.
@@ -180,6 +184,51 @@ export class AudioInput {
 			if (leftIdx >= 0) output[leftIdx] = valueL;
 
 			// Right half: low freq at center (index half), high freq at right edge
+			const rightIdx = half + i;
+			if (rightIdx < plateCount) output[rightIdx] = valueR;
+		}
+
+		return output;
+	}
+
+	/** Returns waveform amplitude mapped to plates in [0, 1] range.
+	 *  Same stereo layout as getFrequencyData: left channel → left half, right → right half.
+	 *  Waveform samples are in [-1, 1]; we use abs() for displacement. */
+	getTimeDomainData(plateCount: number): Float32Array {
+		const output = new Float32Array(plateCount);
+		if (!this.analyserL || !this.analyserR) return output;
+
+		this.analyserL.getFloatTimeDomainData(this.timeDataL);
+		this.analyserR.getFloatTimeDomainData(this.timeDataR);
+
+		const srcLen = this.analyserL.fftSize;
+		const half = Math.floor(plateCount / 2);
+
+		for (let i = 0; i < half; i++) {
+			const srcStart = Math.floor((i / half) * srcLen);
+			const srcEnd = Math.floor(((i + 1) / half) * srcLen);
+
+			// Left channel
+			let sumL = 0, countL = 0;
+			for (let j = srcStart; j < srcEnd && j < srcLen; j++) {
+				sumL += Math.abs(this.timeDataL[j]);
+				countL++;
+			}
+			const valueL = countL > 0 ? Math.min(1, (sumL / countL) * 2.5) : 0;
+
+			// Right channel
+			let sumR = 0, countR = 0;
+			for (let j = srcStart; j < srcEnd && j < srcLen; j++) {
+				sumR += Math.abs(this.timeDataR[j]);
+				countR++;
+			}
+			const valueR = countR > 0 ? Math.min(1, (sumR / countR) * 2.5) : 0;
+
+			// Left half: index 0 = left edge, index half-1 = center
+			const leftIdx = half - 1 - i;
+			if (leftIdx >= 0) output[leftIdx] = valueL;
+
+			// Right half: index half = center, index plateCount-1 = right edge
 			const rightIdx = half + i;
 			if (rightIdx < plateCount) output[rightIdx] = valueR;
 		}

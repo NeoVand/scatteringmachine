@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { initWebGPU } from '$lib/gpu/context.js';
 	import { createSimulation, type Simulation } from '$lib/engine/simulation.js';
-	import { getSimState, sampleAllCurves, DemoPattern } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, sampleAllCurves, DemoPattern, InputMode } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import Controls from './Controls.svelte';
@@ -166,13 +166,18 @@
 
 				// Audio input → plate forces (or demo oscillation if no audio)
 				if (audioInput.hasSource) {
-					const forces = audioInput.isActive
-						? audioInput.getFrequencyData(
+					let forces: Float32Array;
+					if (!audioInput.isActive) {
+						forces = new Float32Array(sim!.plateCount);
+					} else if (simState.inputMode === InputMode.TimeDomain) {
+						forces = audioInput.getTimeDomainData(sim!.plateCount);
+					} else {
+						forces = audioInput.getFrequencyData(
 							sim!.plateCount,
 							simState.inputFreqMin,
 							simState.inputFreqMax
-						)
-						: new Float32Array(sim!.plateCount); // zeros when paused
+						);
+					}
 					sim!.setPlateForces(forces);
 				} else {
 					const t = performance.now() * 0.001;
