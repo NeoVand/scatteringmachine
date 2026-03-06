@@ -8,13 +8,16 @@ import {
 	writePrefixInfo,
 	computeGridConfig,
 	destroyBuffers,
+	updateCurveSamples,
 	type ParticleBuffers,
 	type GridBuffers,
 	type IOBuffers,
 	type GridConfig
 } from '$lib/gpu/buffers.js';
 import physicsShader from '$lib/shaders/physics.wgsl?raw';
-import particleShader from '$lib/shaders/particle.wgsl?raw';
+import colorShader from '$lib/shaders/color.wgsl?raw';
+import particleShaderRaw from '$lib/shaders/particle.wgsl?raw';
+const particleShader = colorShader + '\n' + particleShaderRaw;
 import backgroundShader from '$lib/shaders/background.wgsl?raw';
 import clearShader from '$lib/shaders/clear.wgsl?raw';
 import countShader from '$lib/shaders/count.wgsl?raw';
@@ -40,6 +43,8 @@ export interface Simulation {
 	setPlaying(v: boolean): void;
 	setPlateForces(forces: Float32Array): void;
 	getDetectorReadings(): Float32Array | null;
+	setColorConfig(hue: number, sat: number, bright: number, spectrum: number): void;
+	setCurveSamples(samples: Float32Array): void;
 	plateCount: number;
 	detectorCount: number;
 }
@@ -65,6 +70,10 @@ export function createSimulation(
 	let platesVisible = true;
 	let stiffness = 2000;
 	let viscosity = 10;
+	let hueSource = 0;
+	let satSource = 6; // SOURCE_NONE
+	let brightSource = 0; // SOURCE_SPEED
+	let colorSpectrum = 0; // SPECTRUM_RAINBOW
 	let playing = true;
 	let readFromA = true;
 	let destroyed = false;
@@ -207,7 +216,9 @@ export function createSimulation(
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-			{ binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }
+			{ binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 10, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
 		]
 	});
 	const physicsPipeline = device.createComputePipeline({
@@ -239,7 +250,11 @@ export function createSimulation(
 		entries: [
 			{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-			{ binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } }
+			{ binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+			{ binding: 5, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+			{ binding: 6, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }
 		]
 	});
 	const renderPipeline = device.createRenderPipeline({
@@ -383,7 +398,9 @@ export function createSimulation(
 				{ binding: 5, resource: { buffer: gBuf.prefixSums } },
 				{ binding: 6, resource: { buffer: gBuf.cellCounts } },
 				{ binding: 7, resource: { buffer: gBuf.sortedIndices } },
-				{ binding: 8, resource: { buffer: pBuf.density } }
+				{ binding: 8, resource: { buffer: pBuf.density } },
+				{ binding: 9, resource: { buffer: pBuf.pressure } },
+				{ binding: 10, resource: { buffer: pBuf.acceleration } }
 			]}),
 			BtoA: device.createBindGroup({ layout: physicsBGL, entries: [
 				{ binding: 0, resource: { buffer: pBuf.uniforms } },
@@ -394,7 +411,9 @@ export function createSimulation(
 				{ binding: 5, resource: { buffer: gBuf.prefixSums } },
 				{ binding: 6, resource: { buffer: gBuf.cellCounts } },
 				{ binding: 7, resource: { buffer: gBuf.sortedIndices } },
-				{ binding: 8, resource: { buffer: pBuf.density } }
+				{ binding: 8, resource: { buffer: pBuf.density } },
+				{ binding: 9, resource: { buffer: pBuf.pressure } },
+				{ binding: 10, resource: { buffer: pBuf.acceleration } }
 			]})
 		};
 	}
@@ -412,12 +431,20 @@ export function createSimulation(
 			A: device.createBindGroup({ layout: renderBGL, entries: [
 				{ binding: 0, resource: { buffer: pBuf.uniforms } },
 				{ binding: 1, resource: { buffer: pBuf.posA } },
-				{ binding: 2, resource: { buffer: pBuf.velA } }
+				{ binding: 2, resource: { buffer: pBuf.velA } },
+				{ binding: 3, resource: { buffer: pBuf.density } },
+				{ binding: 4, resource: { buffer: pBuf.pressure } },
+				{ binding: 5, resource: { buffer: pBuf.acceleration } },
+				{ binding: 6, resource: { buffer: pBuf.curveSamples } }
 			]}),
 			B: device.createBindGroup({ layout: renderBGL, entries: [
 				{ binding: 0, resource: { buffer: pBuf.uniforms } },
 				{ binding: 1, resource: { buffer: pBuf.posB } },
-				{ binding: 2, resource: { buffer: pBuf.velB } }
+				{ binding: 2, resource: { buffer: pBuf.velB } },
+				{ binding: 3, resource: { buffer: pBuf.density } },
+				{ binding: 4, resource: { buffer: pBuf.pressure } },
+				{ binding: 5, resource: { buffer: pBuf.acceleration } },
+				{ binding: 6, resource: { buffer: pBuf.curveSamples } }
 			]})
 		};
 	}
@@ -485,7 +512,11 @@ export function createSimulation(
 					detectorsActive,
 					platesVisible,
 					stiffness,
-					viscosity
+					viscosity,
+					hueSource,
+					satSource,
+					brightSource,
+					colorSpectrum
 				});
 				writeGridInfo(device, gBuf.gridInfo, grid.gridW, grid.gridH, grid.cellSize, count);
 				writePrefixInfo(device, gBuf.prefixInfo, grid.totalCells);
@@ -583,7 +614,11 @@ export function createSimulation(
 				detectorsActive,
 				platesVisible,
 				stiffness,
-				viscosity
+				viscosity,
+				hueSource,
+				satSource,
+				brightSource,
+				colorSpectrum
 			});
 		}
 
@@ -684,6 +719,15 @@ export function createSimulation(
 			device.queue.writeBuffer(ioBuf.plateForces, 0, forces, 0, Math.min(forces.length, nPlates));
 		},
 		getDetectorReadings() { return latestDetectorReadings; },
+		setColorConfig(hue: number, sat: number, bright: number, spectrum: number) {
+			hueSource = hue;
+			satSource = sat;
+			brightSource = bright;
+			colorSpectrum = spectrum;
+		},
+		setCurveSamples(samples: Float32Array) {
+			updateCurveSamples(device, pBuf.curveSamples, samples);
+		},
 		get plateCount() { return nPlates; },
 		get detectorCount() { return nDetectors; }
 	};

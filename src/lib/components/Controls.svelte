@@ -1,9 +1,28 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { getSimState } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, ColorSource, SpectrumType } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
+	import CurveEditor from './CurveEditor.svelte';
+
+	const sourceLabels: { value: ColorSource; label: string }[] = [
+		{ value: ColorSource.Speed, label: 'Speed' },
+		{ value: ColorSource.Density, label: 'Density' },
+		{ value: ColorSource.PosX, label: 'Pos X' },
+		{ value: ColorSource.PosY, label: 'Pos Y' },
+		{ value: ColorSource.Pressure, label: 'Pressure' },
+		{ value: ColorSource.Acceleration, label: 'Accel' },
+		{ value: ColorSource.None, label: 'None' }
+	];
+
+	const spectrumLabels: { value: SpectrumType; label: string }[] = [
+		{ value: SpectrumType.Rainbow, label: 'Rainbow' },
+		{ value: SpectrumType.Chrome, label: 'Chrome' },
+		{ value: SpectrumType.Ocean, label: 'Ocean' },
+		{ value: SpectrumType.Bands, label: 'Bands' },
+		{ value: SpectrumType.Mono, label: 'Mono' }
+	];
 
 	interface Props {
 		audioInput: AudioInput;
@@ -436,7 +455,71 @@
 
 			{#if openSection === 'colors'}
 				<div class="section-content" transition:slide={{ duration: 150, easing: cubicOut }}>
-					<div class="hint">Curve editors for hue, saturation, and brightness coming soon.</div>
+					<!-- Spectrum selector -->
+					<div class="color-subsection-label">Spectrum</div>
+					<div class="spectrum-btns">
+						{#each spectrumLabels as s (s.value)}
+							<button
+								class="spectrum-btn"
+								class:active={simState.colorSpectrum === s.value}
+								onclick={() => simState.colorSpectrum = s.value}
+							>{s.label}</button>
+						{/each}
+					</div>
+
+					<!-- Hue -->
+					<div class="color-subsection-label">Hue</div>
+					<div class="row">
+						<span class="label">Source</span>
+						<select class="source-select" value={simState.hueSource} onchange={(e) => simState.hueSource = parseInt(e.currentTarget.value)}>
+							{#each sourceLabels as s (s.value)}
+								<option value={s.value}>{s.label}</option>
+							{/each}
+						</select>
+					</div>
+					<CurveEditor
+						points={simState.hueCurvePoints}
+						onPointsChange={(pts) => { simState.hueCurvePoints = pts; }}
+						label="Hue Curve"
+						type="hue"
+						spectrum={simState.colorSpectrum}
+					/>
+
+					<!-- Saturation -->
+					<div class="color-subsection-label">Saturation</div>
+					<div class="row">
+						<span class="label">Source</span>
+						<select class="source-select" value={simState.satSource} onchange={(e) => simState.satSource = parseInt(e.currentTarget.value)}>
+							{#each sourceLabels as s (s.value)}
+								<option value={s.value}>{s.label}</option>
+							{/each}
+						</select>
+					</div>
+					<CurveEditor
+						points={simState.satCurvePoints}
+						onPointsChange={(pts) => { simState.satCurvePoints = pts; }}
+						label="Saturation Curve"
+						type="saturation"
+						spectrum={simState.colorSpectrum}
+					/>
+
+					<!-- Brightness -->
+					<div class="color-subsection-label">Brightness</div>
+					<div class="row">
+						<span class="label">Source</span>
+						<select class="source-select" value={simState.brightSource} onchange={(e) => simState.brightSource = parseInt(e.currentTarget.value)}>
+							{#each sourceLabels as s (s.value)}
+								<option value={s.value}>{s.label}</option>
+							{/each}
+						</select>
+					</div>
+					<CurveEditor
+						points={simState.brightCurvePoints}
+						onPointsChange={(pts) => { simState.brightCurvePoints = pts; }}
+						label="Brightness Curve"
+						type="brightness"
+						spectrum={simState.colorSpectrum}
+					/>
 				</div>
 			{/if}
 		</div>
@@ -805,5 +888,66 @@
 		color: var(--text-subtle);
 		padding: 6px 0;
 		text-align: center;
+	}
+
+	/* ─── Color Controls ─── */
+	.color-subsection-label {
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-subtle);
+		margin-top: 8px;
+		margin-bottom: 2px;
+	}
+	.color-subsection-label:first-child {
+		margin-top: 0;
+	}
+
+	.spectrum-btns {
+		display: flex;
+		gap: 3px;
+		margin-bottom: 4px;
+	}
+	.spectrum-btn {
+		flex: 1;
+		padding: 5px 0;
+		font-size: 9px;
+		font-weight: 500;
+		color: var(--text-subtle);
+		background: var(--bg-muted);
+		border: 1px solid var(--border-subtle);
+		border-radius: 5px;
+		cursor: pointer;
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+	.spectrum-btn:hover {
+		color: var(--text-secondary);
+		background: var(--bg-hover);
+		border-color: var(--border-muted);
+	}
+	.spectrum-btn.active {
+		color: var(--accent-purple);
+		background: var(--accent-purple-muted);
+		border-color: rgba(167, 139, 250, 0.3);
+	}
+
+	.source-select {
+		flex: 1;
+		padding: 4px 6px;
+		font-size: 10px;
+		color: var(--text-secondary);
+		background: var(--bg-muted);
+		border: 1px solid var(--border-subtle);
+		border-radius: 5px;
+		cursor: pointer;
+		appearance: auto;
+	}
+	.source-select:focus {
+		outline: none;
+		border-color: var(--accent-purple);
 	}
 </style>

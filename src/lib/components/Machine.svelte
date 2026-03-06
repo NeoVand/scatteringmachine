@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { initWebGPU } from '$lib/gpu/context.js';
 	import { createSimulation, type Simulation } from '$lib/engine/simulation.js';
-	import { getSimState } from '$lib/stores/simulation.svelte.js';
+	import { getSimState, sampleAllCurves } from '$lib/stores/simulation.svelte.js';
 	import { AudioInput } from '$lib/audio/input.js';
 	import { AudioOutput } from '$lib/audio/output.js';
 	import Controls from './Controls.svelte';
@@ -71,6 +71,13 @@
 				sim!.setPlatesVisible(simState.platesVisible);
 				sim!.setStiffness(simState.stiffness);
 				sim!.setViscosity(simState.viscosity);
+				sim!.setColorConfig(simState.hueSource, simState.satSource, simState.brightSource, simState.colorSpectrum);
+
+				if (simState.curvesDirty) {
+					const samples = sampleAllCurves(simState.hueCurvePoints, simState.satCurvePoints, simState.brightCurvePoints);
+					sim!.setCurveSamples(samples);
+					simState.curvesDirty = false;
+				}
 
 				// Pause/resume audio input when play state changes
 				if (simState.isPlaying !== wasPlaying) {
@@ -85,6 +92,7 @@
 				if (simState.needsBufferRealloc) {
 					sim!.rebuild(simState.particleCount, simState.particleRadius, simState.plateCount, simState.detectorCount);
 					simState.needsBufferRealloc = false;
+					simState.curvesDirty = true; // re-upload curve samples to new buffer
 				}
 
 				// Audio input → plate forces (or demo oscillation if no audio)

@@ -15,6 +15,10 @@ struct Uniforms {
 	platesVisible: u32,
 	stiffness: f32,
 	viscosity: f32,
+	hueSource: u32,
+	satSource: u32,
+	brightSource: u32,
+	colorSpectrum: u32,
 };
 
 struct VSOut {

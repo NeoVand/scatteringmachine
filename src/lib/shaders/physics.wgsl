@@ -15,6 +15,10 @@ struct Uniforms {
 	platesVisible: u32,
 	stiffness: f32,
 	viscosity: f32,
+	hueSource: u32,
+	satSource: u32,
+	brightSource: u32,
+	colorSpectrum: u32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -26,6 +30,8 @@ struct Uniforms {
 @group(0) @binding(6) var<storage, read> cellCounts: array<u32>;
 @group(0) @binding(7) var<storage, read> sortedIndices: array<u32>;
 @group(0) @binding(8) var<storage, read> densities: array<f32>;
+@group(0) @binding(9) var<storage, read_write> pressures: array<f32>;
+@group(0) @binding(10) var<storage, read_write> accelerations: array<f32>;
 
 const PI: f32 = 3.14159265;
 
@@ -76,6 +82,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 	// Equation of state: only repulsive (clamped, no tensile instability)
 	let P_i = u.stiffness * max(0.0, rho_i - rho0);
+	pressures[i] = P_i;
 
 	// Grid lookup
 	let myCX = min(u32(pos.x / u.cellSize), u.gridW - 1u);
@@ -88,7 +95,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 	var fPressure = vec2<f32>(0.0);
 	var fViscosity = vec2<f32>(0.0);
-
 	for (var cy = startY; cy <= endY; cy++) {
 		for (var cx = startX; cx <= endX; cx++) {
 			let ci = getCellIndex(cx, cy);
@@ -117,12 +123,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 					// Viscosity: μ * Σ (v_j - v_i)/ρ_j * ∇²W
 					fViscosity += (vj - vel) / rho_j * viscLap(dist, h);
 
-					// Short-range repulsion for deep overlaps (prevents interpenetration)
+					// Short-range repulsion for deep overlaps
 					let minDist = 2.0 * r;
 					if (dist < minDist) {
-						let overlap = (minDist - dist) / minDist; // normalized 0-1
-						let repulsion = dir * overlap * overlap * u.stiffness * 2.0;
-						fPressure += repulsion;
+						let overlap = (minDist - dist) / minDist;
+						fPressure += dir * overlap * overlap * u.stiffness * 2.0;
 					}
 				}
 			}
@@ -131,6 +136,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 	// Total acceleration
 	let accel = fPressure + u.viscosity * fViscosity + vec2<f32>(0.0, u.gravity);
+	accelerations[i] = length(accel);
 	vel += accel * u.dt;
 
 	// Velocity cap + NaN protection

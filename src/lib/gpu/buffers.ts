@@ -6,6 +6,9 @@ export interface ParticleBuffers {
 	velA: GPUBuffer;
 	velB: GPUBuffer;
 	density: GPUBuffer;
+	pressure: GPUBuffer;
+	acceleration: GPUBuffer;
+	curveSamples: GPUBuffer;
 	uniforms: GPUBuffer;
 }
 
@@ -49,6 +52,10 @@ export interface UniformData {
 	platesVisible: boolean;
 	stiffness: number;
 	viscosity: number;
+	hueSource: number;
+	satSource: number;
+	brightSource: number;
+	colorSpectrum: number;
 }
 
 export function computeGridConfig(boxWidth: number, boxHeight: number, radius: number): GridConfig {
@@ -89,7 +96,10 @@ export function createParticleBuffers(
 		velA: createBuffer(device, velData.buffer, storageUsage),
 		velB: createEmptyBuffer(device, velData.byteLength, storageUsage),
 		density: createEmptyBuffer(device, count * 4, storageUsage),
-		uniforms: createEmptyBuffer(device, 80, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
+		pressure: createEmptyBuffer(device, count * 4, storageUsage),
+		acceleration: createEmptyBuffer(device, count * 4, storageUsage),
+		curveSamples: createEmptyBuffer(device, 768, storageUsage), // 3 curves × 64 samples × 4 bytes
+		uniforms: createEmptyBuffer(device, 96, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
 	};
 }
 
@@ -134,7 +144,7 @@ export function createIOBuffers(
 }
 
 export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: UniformData) {
-	const arr = new Float32Array(20);
+	const arr = new Float32Array(24);
 	const u32 = new Uint32Array(arr.buffer);
 	arr[0] = data.boxSize[0];
 	arr[1] = data.boxSize[1];
@@ -153,7 +163,15 @@ export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: Unifor
 	u32[14] = data.platesVisible ? 1 : 0;
 	arr[15] = data.stiffness;
 	arr[16] = data.viscosity;
+	u32[17] = data.hueSource;
+	u32[18] = data.satSource;
+	u32[19] = data.brightSource;
+	u32[20] = data.colorSpectrum;
 	device.queue.writeBuffer(buffer, 0, arr);
+}
+
+export function updateCurveSamples(device: GPUDevice, buffer: GPUBuffer, samples: Float32Array) {
+	device.queue.writeBuffer(buffer, 0, samples);
 }
 
 export function writeGridInfo(
