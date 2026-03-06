@@ -8,6 +8,7 @@ export class AudioInput {
 	private stream: MediaStream | null = null;
 	private freqDataL: Float32Array = new Float32Array(0);
 	private freqDataR: Float32Array = new Float32Array(0);
+	private sourceChannels: number = 2;
 
 	/** True when audio context is running (not suspended/closed) */
 	get isActive(): boolean {
@@ -48,14 +49,21 @@ export class AudioInput {
 		this.freqDataR = new Float32Array(this.analyserR.frequencyBinCount);
 	}
 
-	/** Connect source through splitter → per-channel analysers → merger → destination */
+	/** Connect source through splitter → per-channel analysers → merger → destination.
+	 *  Handles mono sources by mirroring channel 0 to both analysers. */
 	private connectStereoChain(connectToDestination: boolean) {
 		if (!this.source || !this.splitter || !this.analyserL || !this.analyserR || !this.merger) return;
 		const ctx = this.ensureContext();
 
 		this.source.connect(this.splitter);
-		this.splitter.connect(this.analyserL, 0); // left channel
-		this.splitter.connect(this.analyserR, 1); // right channel
+		this.splitter.connect(this.analyserL, 0); // left / mono channel
+
+		if (this.sourceChannels >= 2) {
+			this.splitter.connect(this.analyserR, 1); // right channel
+		} else {
+			// Mono: mirror channel 0 to both analysers
+			this.splitter.connect(this.analyserR, 0);
+		}
 
 		if (connectToDestination) {
 			// Recombine for playback
@@ -72,6 +80,7 @@ export class AudioInput {
 		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		const ctx = this.ensureContext();
 		this.source = ctx.createMediaStreamSource(this.stream);
+		this.sourceChannels = this.stream.getAudioTracks()[0]?.getSettings()?.channelCount ?? 1;
 		this.connectStereoChain(false); // mic doesn't need playback
 	}
 
@@ -88,6 +97,7 @@ export class AudioInput {
 		source.buffer = audioBuffer;
 		source.loop = true;
 		this.source = source;
+		this.sourceChannels = audioBuffer.numberOfChannels;
 		this.connectStereoChain(true);
 		source.start();
 	}
@@ -98,6 +108,8 @@ export class AudioInput {
 
 		const ctx = this.ensureContext();
 		this.source = ctx.createMediaElementSource(element);
+		// MediaElement channels aren't known upfront; default to 2, Web Audio upmixes mono automatically
+		this.sourceChannels = 2;
 		this.connectStereoChain(true);
 	}
 
