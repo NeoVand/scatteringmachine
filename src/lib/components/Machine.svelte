@@ -137,6 +137,7 @@
 				sim!.setDetectorsActive(audioOutput.isActive);
 				sim!.setPlatesVisible(simState.platesVisible);
 				sim!.setPlateStyle(simState.plateStyle);
+				sim!.setPlateSpectrum(simState.plateSpectrum);
 				sim!.setStiffness(simState.stiffness);
 				sim!.setViscosity(simState.viscosity);
 				sim!.setColorConfig(simState.hueSource, simState.satSource, simState.brightSource, simState.colorSpectrum);
@@ -170,7 +171,11 @@
 					if (!audioInput.isActive) {
 						forces = new Float32Array(sim!.plateCount);
 					} else if (simState.inputMode === InputMode.TimeDomain) {
-						forces = audioInput.getTimeDomainData(sim!.plateCount);
+						forces = audioInput.getTimeDomainData(
+							sim!.plateCount,
+							simState.inputTimeStart,
+							simState.inputTimeEnd
+						);
 					} else {
 						forces = audioInput.getFrequencyData(
 							sim!.plateCount,

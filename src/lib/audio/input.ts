@@ -12,6 +12,12 @@ export class AudioInput {
 	private timeDataR: Float32Array = new Float32Array(0);
 	private sourceChannels: number = 2;
 
+	// File playback state
+	private _audioBuffer: AudioBuffer | null = null;
+	private _startOffset: number = 0;
+	private _startedAt: number = 0;
+	private _isFilePlaying: boolean = false;
+
 	/** True when audio context is running (not suspended/closed) */
 	get isActive(): boolean {
 		return this.ctx !== null && this.ctx.state === 'running';
@@ -26,6 +32,36 @@ export class AudioInput {
 		return this.ctx?.sampleRate ?? 44100;
 	}
 
+	/** Size of the analyser time-domain buffer (fftSize) */
+	get bufferSize(): number {
+		return this.analyserL?.fftSize ?? 32768;
+	}
+
+	/** True when a decoded audio file is available for playback */
+	get hasFile(): boolean {
+		return this._audioBuffer !== null;
+	}
+
+	/** True when a file is actively playing (not paused) */
+	get isFilePlaying(): boolean {
+		return this._isFilePlaying;
+	}
+
+	/** Duration of the loaded file in seconds */
+	get fileDuration(): number {
+		return this._audioBuffer?.duration ?? 0;
+	}
+
+	/** Current playback position in seconds */
+	get filePosition(): number {
+		if (!this._audioBuffer) return 0;
+		if (this._isFilePlaying && this.ctx) {
+			const elapsed = this.ctx.currentTime - this._startedAt;
+			return (this._startOffset + elapsed) % this._audioBuffer.duration;
+		}
+		return this._startOffset % this._audioBuffer.duration;
+	}
+
 	private ensureContext(): AudioContext {
 		if (!this.ctx) {
 			this.ctx = new AudioContext();
@@ -37,11 +73,11 @@ export class AudioInput {
 		const ctx = this.ensureContext();
 
 		this.analyserL = ctx.createAnalyser();
-		this.analyserL.fftSize = 8192;
+		this.analyserL.fftSize = 32768;
 		this.analyserL.smoothingTimeConstant = 0.3;
 
 		this.analyserR = ctx.createAnalyser();
-		this.analyserR.fftSize = 8192;
+		this.analyserR.fftSize = 32768;
 		this.analyserR.smoothingTimeConstant = 0.3;
 
 		this.splitter = ctx.createChannelSplitter(2);
@@ -77,6 +113,17 @@ export class AudioInput {
 		}
 	}
 
+	/** Disconnect and destroy the current source node without touching analysers/splitter/merger */
+	private disconnectSource() {
+		if (this.source) {
+			if ('stop' in this.source && typeof this.source.stop === 'function') {
+				try { this.source.stop(); } catch { /* already stopped */ }
+			}
+			this.source.disconnect();
+			this.source = null;
+		}
+	}
+
 	async startMicrophone(): Promise<void> {
 		this.stop();
 		this.setupAnalysers();
@@ -95,15 +142,72 @@ export class AudioInput {
 		const ctx = this.ensureContext();
 		const response = await fetch(url);
 		const arrayBuffer = await response.arrayBuffer();
-		const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+		this._audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+		this.sourceChannels = this._audioBuffer.numberOfChannels;
+		this._startOffset = 0;
+		this.playFile();
+	}
+
+	/** Start or resume file playback from _startOffset */
+	playFile() {
+		if (!this._audioBuffer) return;
+		const ctx = this.ensureContext();
+
+		// Disconnect any existing source without tearing down the analyser chain
+		this.disconnectSource();
+
+		// Reconnect the analyser chain (splitter/merger may have been disconnected)
+		this.analyserL?.disconnect();
+		this.analyserR?.disconnect();
+		this.splitter?.disconnect();
+		this.merger?.disconnect();
 
 		const source = ctx.createBufferSource();
-		source.buffer = audioBuffer;
+		source.buffer = this._audioBuffer;
 		source.loop = true;
 		this.source = source;
-		this.sourceChannels = audioBuffer.numberOfChannels;
 		this.connectStereoChain(true);
-		source.start();
+
+		// Handle looping offset: modulo the duration
+		const offset = this._startOffset % this._audioBuffer.duration;
+		source.start(0, offset);
+		this._startedAt = ctx.currentTime;
+		this._isFilePlaying = true;
+
+		// Ensure context is running
+		if (ctx.state === 'suspended') {
+			ctx.resume();
+		}
+	}
+
+	/** Pause file playback, recording position for later resume */
+	pauseFile() {
+		if (!this._audioBuffer || !this._isFilePlaying) return;
+		// Record where we are
+		if (this.ctx) {
+			const elapsed = this.ctx.currentTime - this._startedAt;
+			this._startOffset = (this._startOffset + elapsed) % this._audioBuffer.duration;
+		}
+		this.disconnectSource();
+		this._isFilePlaying = false;
+	}
+
+	/** Seek to a specific time (seconds). If playing, restarts from new position. */
+	seekFile(time: number) {
+		if (!this._audioBuffer) return;
+		this._startOffset = Math.max(0, Math.min(time, this._audioBuffer.duration));
+		if (this._isFilePlaying) {
+			this.playFile();
+		}
+	}
+
+	/** Restart file playback from the stored AudioBuffer (used when switching back to file source) */
+	restartFile() {
+		if (!this._audioBuffer) return;
+		this.stop();
+		this.setupAnalysers();
+		this.sourceChannels = this._audioBuffer.numberOfChannels;
+		this.playFile();
 	}
 
 	connectElement(element: HTMLAudioElement | HTMLVideoElement): void {
@@ -193,8 +297,9 @@ export class AudioInput {
 
 	/** Returns waveform amplitude mapped to plates in [0, 1] range.
 	 *  Same stereo layout as getFrequencyData: left channel → left half, right → right half.
-	 *  Waveform samples are in [-1, 1]; we use abs() for displacement. */
-	getTimeDomainData(plateCount: number): Float32Array {
+	 *  Waveform samples are in [-1, 1]; we use abs() for displacement.
+	 *  timeStart/timeEnd are fractions [0, 1] of the buffer to window into. */
+	getTimeDomainData(plateCount: number, timeStart = 0, timeEnd = 1): Float32Array {
 		const output = new Float32Array(plateCount);
 		if (!this.analyserL || !this.analyserR) return output;
 
@@ -204,13 +309,18 @@ export class AudioInput {
 		const srcLen = this.analyserL.fftSize;
 		const half = Math.floor(plateCount / 2);
 
+		// Window into a portion of the buffer
+		const winStart = Math.floor(Math.max(0, Math.min(1, timeStart)) * srcLen);
+		const winEnd = Math.floor(Math.max(0, Math.min(1, timeEnd)) * srcLen);
+		const winLen = Math.max(1, winEnd - winStart);
+
 		for (let i = 0; i < half; i++) {
-			const srcStart = Math.floor((i / half) * srcLen);
-			const srcEnd = Math.floor(((i + 1) / half) * srcLen);
+			const srcStart = winStart + Math.floor((i / half) * winLen);
+			const srcEnd = winStart + Math.floor(((i + 1) / half) * winLen);
 
 			// Left channel
 			let sumL = 0, countL = 0;
-			for (let j = srcStart; j < srcEnd && j < srcLen; j++) {
+			for (let j = srcStart; j < srcEnd && j < winEnd; j++) {
 				sumL += Math.abs(this.timeDataL[j]);
 				countL++;
 			}
@@ -218,7 +328,7 @@ export class AudioInput {
 
 			// Right channel
 			let sumR = 0, countR = 0;
-			for (let j = srcStart; j < srcEnd && j < srcLen; j++) {
+			for (let j = srcStart; j < srcEnd && j < winEnd; j++) {
 				sumR += Math.abs(this.timeDataR[j]);
 				countR++;
 			}
@@ -237,13 +347,7 @@ export class AudioInput {
 	}
 
 	stop() {
-		if (this.source) {
-			if ('stop' in this.source && typeof this.source.stop === 'function') {
-				try { this.source.stop(); } catch { /* already stopped */ }
-			}
-			this.source.disconnect();
-			this.source = null;
-		}
+		this.disconnectSource();
 		if (this.stream) {
 			this.stream.getTracks().forEach((t) => t.stop());
 			this.stream = null;
@@ -256,10 +360,18 @@ export class AudioInput {
 		this.analyserR = null;
 		this.splitter = null;
 		this.merger = null;
+		this._isFilePlaying = false;
+	}
+
+	/** Full stop including clearing the stored audio buffer */
+	stopAndClear() {
+		this.stop();
+		this._audioBuffer = null;
+		this._startOffset = 0;
 	}
 
 	destroy() {
-		this.stop();
+		this.stopAndClear();
 		if (this.ctx) {
 			this.ctx.close();
 			this.ctx = null;

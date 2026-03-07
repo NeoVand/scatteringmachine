@@ -15,10 +15,12 @@ import {
 	type GridConfig
 } from '$lib/gpu/buffers.js';
 import physicsShader from '$lib/shaders/physics.wgsl?raw';
+import spectrumShader from '$lib/shaders/spectrum.wgsl?raw';
 import colorShader from '$lib/shaders/color.wgsl?raw';
 import particleShaderRaw from '$lib/shaders/particle.wgsl?raw';
-const particleShader = colorShader + '\n' + particleShaderRaw;
-import backgroundShader from '$lib/shaders/background.wgsl?raw';
+const particleShader = spectrumShader + '\n' + colorShader + '\n' + particleShaderRaw;
+import backgroundShaderRaw from '$lib/shaders/background.wgsl?raw';
+const backgroundShader = spectrumShader + '\n' + backgroundShaderRaw;
 import clearShader from '$lib/shaders/clear.wgsl?raw';
 import countShader from '$lib/shaders/count.wgsl?raw';
 import prefixSumShader from '$lib/shaders/prefix_sum.wgsl?raw';
@@ -40,6 +42,7 @@ export interface Simulation {
 	setDetectorsActive(v: boolean): void;
 	setPlatesVisible(v: boolean): void;
 	setPlateStyle(v: number): void;
+	setPlateSpectrum(v: number): void;
 	setStiffness(v: number): void;
 	setViscosity(v: number): void;
 	setPlaying(v: boolean): void;
@@ -78,6 +81,7 @@ export function createSimulation(
 	let brightSource = 0; // SOURCE_SPEED
 	let colorSpectrum = 0; // SPECTRUM_RAINBOW
 	let plateStyle = 0;
+	let plateSpectrum = 10; // SPECTRUM_FIRE
 	let hueIntensity = 1.0;
 	let satIntensity = 1.0;
 	let brightIntensity = 1.0;
@@ -555,7 +559,8 @@ export function createSimulation(
 					plateStyle,
 					hueIntensity,
 					satIntensity,
-					brightIntensity
+					brightIntensity,
+					plateSpectrum
 				});
 				writeGridInfo(device, gBuf.gridInfo, grid.gridW, grid.gridH, grid.cellSize, count);
 				writePrefixInfo(device, gBuf.prefixInfo, grid.totalCells);
@@ -676,7 +681,8 @@ export function createSimulation(
 				plateStyle,
 				hueIntensity,
 				satIntensity,
-				brightIntensity
+				brightIntensity,
+				plateSpectrum
 			});
 		}
 
@@ -772,6 +778,7 @@ export function createSimulation(
 		setDetectorsActive(v: boolean) { detectorsActive = v; },
 		setPlatesVisible(v: boolean) { platesVisible = v; },
 		setPlateStyle(v: number) { plateStyle = v; },
+		setPlateSpectrum(v: number) { plateSpectrum = v; },
 		setStiffness(v: number) { stiffness = v; },
 		setViscosity(v: number) { viscosity = v; },
 		setPlaying(v: boolean) { playing = v; },

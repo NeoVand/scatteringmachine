@@ -61,6 +61,8 @@ let plateReach = $state(0.95);
 let inputMode = $state<InputMode>(InputMode.Frequency);
 let inputFreqMin = $state(20);
 let inputFreqMax = $state(8000);
+let inputTimeStart = $state(0);
+let inputTimeEnd = $state(1);
 let potentialType = $state<'hard' | 'soft' | 'lennard-jones'>('hard');
 let platesVisible = $state(true);
 let plateStyle = $state<PlateStyle>(PlateStyle.Curve);
@@ -68,6 +70,7 @@ let stiffness = $state(8000);
 let viscosity = $state(75);
 let demoPattern = $state<DemoPattern>(DemoPattern.Ripple);
 
+let plateSpectrum = $state<SpectrumType>(SpectrumType.Fire);
 let hueSource = $state<ColorSource>(ColorSource.Speed);
 let satSource = $state<ColorSource>(ColorSource.None);
 let brightSource = $state<ColorSource>(ColorSource.Speed);
@@ -267,6 +270,20 @@ export function getSimState() {
 		set inputFreqMax(v: number) {
 			inputFreqMax = Math.max(100, Math.min(22000, v));
 		},
+		get inputTimeStart() {
+			return inputTimeStart;
+		},
+		set inputTimeStart(v: number) {
+			inputTimeStart = Math.max(0, Math.min(0.99, v));
+			if (inputTimeStart >= inputTimeEnd) inputTimeEnd = Math.min(1, inputTimeStart + 0.01);
+		},
+		get inputTimeEnd() {
+			return inputTimeEnd;
+		},
+		set inputTimeEnd(v: number) {
+			inputTimeEnd = Math.max(0.01, Math.min(1, v));
+			if (inputTimeEnd <= inputTimeStart) inputTimeStart = Math.max(0, inputTimeEnd - 0.01);
+		},
 		get potentialType() {
 			return potentialType;
 		},
@@ -326,6 +343,12 @@ export function getSimState() {
 		},
 		set colorSpectrum(v: SpectrumType) {
 			colorSpectrum = v;
+		},
+		get plateSpectrum() {
+			return plateSpectrum;
+		},
+		set plateSpectrum(v: SpectrumType) {
+			plateSpectrum = v;
 		},
 		get hueIntensity() {
 			return hueIntensity;

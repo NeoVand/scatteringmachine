@@ -23,6 +23,7 @@ struct Uniforms {
 	hueIntensity: f32,
 	satIntensity: f32,
 	brightIntensity: f32,
+	plateSpectrum: u32,
 };
 
 struct VSOut {
@@ -46,24 +47,6 @@ fn vs(@builtin(vertex_index) vid: u32) -> VSOut {
 	out.uv = positions[vid] * 0.5 + 0.5;
 	out.uv.y = 1.0 - out.uv.y;
 	return out;
-}
-
-// Color palette: maps a 0-1 value to a cool→warm gradient
-fn spectrumColor(t: f32) -> vec3<f32> {
-	// Deep blue → cyan → green → yellow → orange → hot pink
-	let c0 = vec3<f32>(0.05, 0.08, 0.35); // deep blue
-	let c1 = vec3<f32>(0.0, 0.55, 0.7);   // cyan
-	let c2 = vec3<f32>(0.1, 0.8, 0.3);    // green
-	let c3 = vec3<f32>(0.9, 0.8, 0.1);    // yellow
-	let c4 = vec3<f32>(1.0, 0.35, 0.1);   // orange
-	let c5 = vec3<f32>(1.0, 0.1, 0.4);    // hot pink
-
-	let s = clamp(t, 0.0, 1.0) * 5.0;
-	if (s < 1.0) { return mix(c0, c1, s); }
-	if (s < 2.0) { return mix(c1, c2, s - 1.0); }
-	if (s < 3.0) { return mix(c2, c3, s - 2.0); }
-	if (s < 4.0) { return mix(c3, c4, s - 3.0); }
-	return mix(c4, c5, s - 4.0);
 }
 
 // Catmull-Rom interpolation for smooth curve mode
@@ -111,7 +94,7 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 			// The solid bar (full width, no inset)
 			if (worldPos.y > plateTop) {
 				let barT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
-				let barColor = spectrumColor(force);
+				let barColor = getColorFromSpectrum(force, u.plateSpectrum);
 				let brightness = mix(0.12, 0.7, barT * barT);
 				let separatorDim = mix(0.3, 1.0, separator);
 
@@ -148,7 +131,7 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 			// Fill below the curve
 			if (worldPos.y > curveTop) {
 				let fillT = clamp((u.boxSize.y - worldPos.y) / max(extension, 1.0), 0.0, 1.0);
-				let fillColor = spectrumColor(interpForce);
+				let fillColor = getColorFromSpectrum(interpForce, u.plateSpectrum);
 				let brightness = mix(0.1, 0.6, fillT * fillT);
 
 				let finalFill = fillColor * brightness;
@@ -159,7 +142,7 @@ fn fs(in: VSOut) -> @location(0) vec4<f32> {
 			let distToCurve = abs(worldPos.y - curveTop);
 			if (distToCurve < 3.0 && interpForce > 0.005) {
 				let lineAlpha = smoothstep(3.0, 0.5, distToCurve);
-				let lineColor = spectrumColor(interpForce) * (0.6 + 0.4 * interpForce);
+				let lineColor = getColorFromSpectrum(interpForce, u.plateSpectrum) * (0.6 + 0.4 * interpForce);
 				color = max(color, lineColor * lineAlpha);
 			}
 

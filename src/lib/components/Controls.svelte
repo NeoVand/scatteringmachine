@@ -59,6 +59,10 @@
 	let freqMax = $state(4000);
 	let isOpen = $state(true);
 	let fileInput: HTMLInputElement = $state(null!);
+	let fileIsPlaying = $state(true);
+	let fileProgress = $state(0);
+	let fileDuration = $state(0);
+	let progressAnimFrame = 0;
 
 	// Accordion state — only one section open at a time
 	let openSection = $state<'fluid' | 'plates' | 'audio-in' | 'audio-out' | 'colors'>('fluid');
@@ -68,6 +72,7 @@
 	let showSatCurve = $state(false);
 	let showBrightCurve = $state(false);
 	let spectrumDropdownOpen = $state(false);
+	let plateSpectrumDropdownOpen = $state(false);
 
 	function toggleSection(section: typeof openSection) {
 		openSection = section;
@@ -77,15 +82,26 @@
 		if (source === 'none') {
 			audioInput.stop();
 			audioSource = 'none';
+			stopProgressUpdates();
 		} else if (source === 'mic') {
 			try {
 				await audioInput.startMicrophone();
 				audioSource = 'mic';
+				stopProgressUpdates();
 			} catch {
 				audioSource = 'none';
 			}
 		} else if (source === 'file') {
-			fileInput?.click();
+			if (audioInput.hasFile) {
+				// Already have a file loaded — restart it
+				audioInput.restartFile();
+				audioSource = 'file';
+				fileIsPlaying = true;
+				fileDuration = audioInput.fileDuration;
+				startProgressUpdates();
+			} else {
+				fileInput?.click();
+			}
 		}
 	}
 
@@ -93,10 +109,59 @@
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
+		// Reset input value so same file can be re-selected
 		const url = URL.createObjectURL(file);
 		audioInput.loadFile(url).then(() => {
 			audioSource = 'file';
+			fileIsPlaying = true;
+			fileDuration = audioInput.fileDuration;
+			startProgressUpdates();
 		});
+		input.value = '';
+	}
+
+	function toggleFilePlayback() {
+		if (fileIsPlaying) {
+			audioInput.pauseFile();
+			fileIsPlaying = false;
+			stopProgressUpdates();
+		} else {
+			audioInput.playFile();
+			fileIsPlaying = true;
+			startProgressUpdates();
+		}
+	}
+
+	function handleSeek(e: Event) {
+		const time = parseFloat((e.target as HTMLInputElement).value);
+		audioInput.seekFile(time);
+		fileProgress = time;
+	}
+
+	function openFilePicker() {
+		fileInput?.click();
+	}
+
+	function startProgressUpdates() {
+		stopProgressUpdates();
+		function update() {
+			fileProgress = audioInput.filePosition;
+			progressAnimFrame = requestAnimationFrame(update);
+		}
+		progressAnimFrame = requestAnimationFrame(update);
+	}
+
+	function stopProgressUpdates() {
+		if (progressAnimFrame) {
+			cancelAnimationFrame(progressAnimFrame);
+			progressAnimFrame = 0;
+		}
+	}
+
+	function formatTime(seconds: number): string {
+		const m = Math.floor(seconds / 60);
+		const s = Math.floor(seconds % 60);
+		return `${m}:${s.toString().padStart(2, '0')}`;
 	}
 
 	async function toggleAudioOutput() {
@@ -336,6 +401,31 @@
 							</button>
 						</div>
 					</div>
+					<!-- Plate spectrum dropdown -->
+					<div class="row">
+						<span class="label">Color</span>
+						<div class="spectrum-dropdown-wrap">
+							<button class="spectrum-dropdown-btn" onclick={() => plateSpectrumDropdownOpen = !plateSpectrumDropdownOpen}>
+								<div class="spectrum-preview" style:background={spectrumLabels.find(s => s.value === simState.plateSpectrum)?.gradient}></div>
+								<span class="spectrum-name">{spectrumLabels.find(s => s.value === simState.plateSpectrum)?.label}</span>
+								<svg class="spectrum-chevron" class:open={plateSpectrumDropdownOpen} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9" /></svg>
+							</button>
+							{#if plateSpectrumDropdownOpen}
+								<div class="spectrum-dropdown" transition:slide={{ duration: 120, easing: cubicOut }}>
+									{#each spectrumLabels as s (s.value)}
+										<button
+											class="spectrum-option"
+											class:active={simState.plateSpectrum === s.value}
+											onclick={() => { simState.plateSpectrum = s.value; plateSpectrumDropdownOpen = false; }}
+										>
+											<div class="spectrum-option-bar" style:background={s.gradient}></div>
+											<span class="spectrum-option-label">{s.label}</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</div>
 					<div class="row">
 						<span class="label">Pattern</span>
 						<select
@@ -397,6 +487,30 @@
 					</div>
 					{#if audioSource !== 'none'}
 						<div class="sub-section" transition:slide={{ duration: 120, easing: cubicOut }}>
+							{#if audioSource === 'file'}
+								<div class="player-row">
+									<button class="player-btn" onclick={toggleFilePlayback} title={fileIsPlaying ? 'Pause' : 'Play'}>
+										{#if fileIsPlaying}
+											<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+										{:else}
+											<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20" /></svg>
+										{/if}
+									</button>
+									<input
+										type="range"
+										class="slider player-seek"
+										min="0"
+										max={fileDuration}
+										step="0.1"
+										value={fileProgress}
+										oninput={handleSeek}
+									/>
+									<span class="player-time">{formatTime(fileProgress)}<span class="player-sep">/</span>{formatTime(fileDuration)}</span>
+									<button class="player-btn" onclick={openFilePicker} title="Change file">
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+									</button>
+								</div>
+							{/if}
 							<div class="row">
 								<span class="label">Mode</span>
 								<div class="source-btns">
@@ -438,6 +552,27 @@
 										class="slider"
 									/>
 									<span class="value">{simState.inputFreqMax}Hz</span>
+								</div>
+							{:else}
+								<div class="row">
+									<span class="label">Win start</span>
+									<input
+										type="range" min="0" max="0.99" step="0.01"
+										value={simState.inputTimeStart}
+										oninput={(e) => simState.inputTimeStart = parseFloat(e.currentTarget.value)}
+										class="slider"
+									/>
+									<span class="value">{Math.round(simState.inputTimeStart * audioInput.bufferSize / audioInput.sampleRate * 1000)}ms</span>
+								</div>
+								<div class="row">
+									<span class="label">Win end</span>
+									<input
+										type="range" min="0.01" max="1" step="0.01"
+										value={simState.inputTimeEnd}
+										oninput={(e) => simState.inputTimeEnd = parseFloat(e.currentTarget.value)}
+										class="slider"
+									/>
+									<span class="value">{Math.round(simState.inputTimeEnd * audioInput.bufferSize / audioInput.sampleRate * 1000)}ms</span>
 								</div>
 							{/if}
 						</div>
@@ -1039,6 +1174,8 @@
 	.spectrum-dropdown-wrap {
 		position: relative;
 		margin-bottom: 6px;
+		flex: 1;
+		min-width: 0;
 	}
 	.spectrum-dropdown-btn {
 		display: flex;
@@ -1193,6 +1330,57 @@
 	.curve-toggle svg {
 		width: 14px;
 		height: 14px;
+	}
+
+	/* ─── Mini Player ─── */
+	.player-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 0 6px;
+	}
+	.player-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		flex-shrink: 0;
+		background: var(--bg-muted);
+		border: 1px solid var(--border-subtle);
+		border-radius: 6px;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition:
+			color var(--transition-fast),
+			background var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+	.player-btn:hover {
+		color: var(--text-primary);
+		background: var(--bg-hover);
+		border-color: var(--border-muted);
+	}
+	.player-btn svg {
+		width: 12px;
+		height: 12px;
+	}
+	.player-seek {
+		flex: 1;
+		min-width: 0;
+	}
+	.player-time {
+		flex-shrink: 0;
+		font-family: ui-monospace, 'SF Mono', monospace;
+		font-size: 9px;
+		color: var(--text-subtle);
+		white-space: nowrap;
+	}
+	.player-sep {
+		color: var(--text-subtle);
+		opacity: 0.5;
+		margin: 0 1px;
 	}
 
 	/* Intensity Row */

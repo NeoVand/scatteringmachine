@@ -61,6 +61,7 @@ export interface UniformData {
 	hueIntensity: number;
 	satIntensity: number;
 	brightIntensity: number;
+	plateSpectrum: number;
 }
 
 export function computeGridConfig(boxWidth: number, boxHeight: number, radius: number): GridConfig {
@@ -177,6 +178,7 @@ export function writeUniforms(device: GPUDevice, buffer: GPUBuffer, data: Unifor
 	arr[22] = data.hueIntensity;
 	arr[23] = data.satIntensity;
 	arr[24] = data.brightIntensity;
+	u32[25] = data.plateSpectrum;
 	device.queue.writeBuffer(buffer, 0, arr);
 }
 
